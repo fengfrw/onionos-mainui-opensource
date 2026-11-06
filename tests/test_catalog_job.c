@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
+#include "app/browser.h"
 #include "app/catalog_job.h"
 #include "app/details.h"
 #include "catalog/cache.h"
@@ -52,6 +53,55 @@ static unsigned hash_file(const char *path)
 static bool cancel_after(void *context)
 {
     return ++*(int *)context > 40;
+}
+
+static bool first_cache_gone(void *context)
+{
+    return access((const char *)context, F_OK) != 0;
+}
+
+/* Refresh all stops between consoles once Back cancels it: the console it
+ * was clearing finishes, the next keeps its cache. */
+static void refresh_all_cancelled(void)
+{
+    char sd[] = "/tmp/mainui-refresh-XXXXXX";
+    assert(mkdtemp(sd));
+    const char *names[] = {"Alpha", "Bravo"};
+    char path[4200], first[4200];
+    for (int i = 0; i < 2; i++) {
+        const char *files[][2] = {{"Emu/%s/config.json", NULL},
+                                  {"Emu/%s/launch.sh", "#!/bin/sh\n"},
+                                  {"Roms/%s/game.nes", "rom"},
+                                  {"Roms/%s/%s_cache6.db", "cache"}};
+        for (int f = 0; f < 4; f++) {
+            char relative[256];
+            snprintf(relative, sizeof relative, files[f][0], names[i], names[i]);
+            snprintf(path, sizeof path, "%s/%s", sd, relative);
+            char command[4400];
+            snprintf(command, sizeof command, "mkdir -p \"$(dirname '%s')\"", path);
+            assert(!system(command));
+            FILE *file = fopen(path, "w");
+            assert(file);
+            if (files[f][1]) {
+                fputs(files[f][1], file);
+            }
+            else {
+                fprintf(file,
+                        "{\"label\":\"%s\",\"launch\":\"launch.sh\",\"rompath\":"
+                        "\"../../Roms/%s\",\"extlist\":\"nes\"}",
+                        names[i], names[i]);
+            }
+            fclose(file);
+        }
+    }
+    snprintf(first, sizeof first, "%s/Roms/Alpha/Alpha_cache6.db", sd);
+    char error[256];
+    MainUICancel cancel = {first_cache_gone, first};
+    assert(!mainui_browser_refresh_control(sd, false, error, cancel) && *error);
+    snprintf(path, sizeof path, "%s/Roms/Bravo/Bravo_cache6.db", sd);
+    assert(access(first, F_OK) && !access(path, F_OK));
+    snprintf(path, sizeof path, "rm -rf '%s'", sd);
+    assert(!system(path));
 }
 
 /* Large covers are scaled by the decode worker, not when the UI thread reaps them (#8). */
@@ -347,6 +397,7 @@ int main(int argc, char **argv)
     }
     cover_scaled_in_worker(sd);
     thumbnail_cache(sd);
+    refresh_all_cancelled();
     MainUICatalog *catalog = calloc(1, sizeof *catalog);
     assert(catalog && mainui_catalog_open(catalog, sd, false));
     MainUIViewport view, home = {1, 0, 0, 0};
