@@ -41,7 +41,7 @@ static bool tap(MainUIApp *ui, SDLKey key)
 static void home_and_popups(MainUIApp *ui)
 {
     reset(ui);
-    assert(key_event(ui, SDL_KEYDOWN, SDLK_ESCAPE, 0));
+    assert(tap(ui, SDLK_ESCAPE));
     assert(ui->running && ui->home && ui->home_view.selected == 1);
     assert(key_event(ui, SDL_KEYDOWN, SDLK_LCTRL, 0));
     assert(ui->running && ui->home);
@@ -72,15 +72,22 @@ static void home_and_popups(MainUIApp *ui)
     assert(key_event(ui, SDL_KEYDOWN, SDLK_RETURN, 0));
     assert(!ui->context_open && ui->confirmation == CONTEXT_SHUTDOWN);
     assert(!ui->launch_pending);
-    assert(key_event(ui, SDL_KEYDOWN, SDLK_ESCAPE, 0));
+    assert(tap(ui, SDLK_ESCAPE));
     assert(ui->confirmation == -1 && ui->home && ui->running);
 
     /* Messages consume input before home/list navigation. */
     strcpy(ui->message_title, "Message");
     assert(key_event(ui, SDL_KEYDOWN, SDLK_RIGHT, 0));
     assert(ui->home_view.selected == 2 && *ui->message_title);
-    assert(key_event(ui, SDL_KEYDOWN, SDLK_ESCAPE, 0));
+    assert(tap(ui, SDLK_ESCAPE));
     assert(!*ui->message_title && ui->running);
+    /* B acts once per press: held, its repeats close nothing more. */
+    strcpy(ui->message_title, "Message");
+    assert(key_event(ui, SDL_KEYDOWN, SDLK_ESCAPE, 0) && !*ui->message_title);
+    strcpy(ui->message_title, "Message");
+    assert(key_event(ui, SDL_KEYDOWN, SDLK_ESCAPE, 0) && *ui->message_title);
+    assert(key_event(ui, SDL_KEYUP, SDLK_ESCAPE, 0) && *ui->message_title);
+    assert(tap(ui, SDLK_ESCAPE) && !*ui->message_title && ui->running);
 }
 
 static void start_is_consumed(MainUIApp *ui)
@@ -139,7 +146,7 @@ static void keyboard_priority(MainUIApp *ui)
     assert(key_event(ui, SDL_KEYDOWN, SDLK_F2, 0));
     assert(ui->name_input.open && ui->settings_keyboard == 2 && *ui->name_input.error);
     assert(!*ui->settings_page.password && !ui->device_job.thread);
-    assert(key_event(ui, SDL_KEYDOWN, SDLK_ESCAPE, 0));
+    assert(tap(ui, SDLK_ESCAPE));
     assert(!ui->name_input.open && !ui->settings_keyboard);
     assert(!ui->settings_page.connect_after_password && ui->settings_page.open);
 
@@ -160,7 +167,7 @@ static void keyboard_priority(MainUIApp *ui)
     ui->device_job.thread = NULL;
     ui->device_job.operation = 0;
     ui->device_enabled = false;
-    assert(key_event(ui, SDL_KEYDOWN, SDLK_ESCAPE, 0));
+    assert(tap(ui, SDLK_ESCAPE));
     assert(!ui->name_input.open && !ui->settings_keyboard);
 }
 
@@ -264,7 +271,7 @@ static void message_over_details(MainUIApp *ui)
     assert(!*ui->message_title && ui->details.open && !ui->launch_pending);
     assert(key_event(ui, SDL_KEYUP, SDLK_RETURN, 0));
     strcpy(ui->message_title, "Catalog unavailable");
-    assert(key_event(ui, SDL_KEYDOWN, SDLK_ESCAPE, 0));
+    assert(tap(ui, SDLK_ESCAPE));
     assert(!*ui->message_title && ui->details.open);
     ui->details.open = false;
     ui->handoff_dir = NULL;
@@ -313,6 +320,8 @@ static void releases_after_sleep(MainUIApp *ui)
     assert(key_event(ui, SDL_KEYDOWN, SDLK_RCTRL, 0));
     ui->y_armed = ui->start_armed = ui->select_brightness = true;
     assert(ui->select_armed && ui->y_armed && ui->start_armed);
+    /* SDL_GetTicks() is not guaranteed to start at zero before SDL_Init. */
+    ui->next_device_check = SDL_GetTicks();
     assert(mainui_poll_jobs(ui) && ui->device_status.sleeping == 1);
     assert(!ui->y_armed && !ui->select_armed && !ui->start_armed && !ui->select_brightness);
     /* Wake, then release. */

@@ -11,6 +11,7 @@ The tables below name the buttons after mapping.
 ## When buttons act
 
 A, B and X act when pressed; stock acts on their release. Acting at once makes moving through the menus faster, and a held A cannot answer a question twice (see [Confirmations and messages](#confirmations-and-messages)). Y, Select, Start and Menu act when released, as in stock: Onion's keymon uses them for shortcuts and combos, which must not also act in MainUI.
+B, and X where it acts as B, act once per press: held down, they do nothing more until released, so a held B goes back one level, not several.
 
 ## X
 

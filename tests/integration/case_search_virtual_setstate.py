@@ -66,6 +66,11 @@ def run(name, *options):
 all_systems = run("all", "--system", " Search ", "--input", "E")
 missing = run("missing", "--system", " Search ", "--input", "DE")
 assert missing != all_systems, "Two empty-path virtual folders reopened the same results"
+# B held in a folder goes back one level, to Search's list, not out of
+# Search with its repeats; two presses go back two.
+back = run("back", "--system", " Search ", "--input", "DEB")
+assert run("held", "--system", " Search ", "--input", "DE+B+B+B") == back
+assert run("twice", "--system", " Search ", "--input", "DEBB") != back
 
 
 def state(page_type, label):

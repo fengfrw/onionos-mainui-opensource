@@ -630,6 +630,11 @@ bool mainui_wait_event(MainUIApp *ui, SDL_Event *event)
              event->key.keysym.sym == SDLK_RCTRL || event->key.keysym.sym == SDLK_F2)) {
             ui->script_release = event->key.keysym.sym;
         }
+        /* A scripted B is a new press, as if B had been released after the
+         * last one; +B is a repeat of B held down. */
+        if (event->type == SDL_KEYDOWN && !hold && event->key.keysym.sym == SDLK_ESCAPE) {
+            ui->held[SDLK_ESCAPE] = false;
+        }
         if (event->key.keysym.sym == SDLK_UNKNOWN) {
             fprintf(stderr, "Invalid --input action\n");
             ui->status = 2;

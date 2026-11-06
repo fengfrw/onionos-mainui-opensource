@@ -1391,6 +1391,11 @@ static void dispatch_key(MainUIApp *ui, SDL_Event *event)
     if (pressed >= 0 && pressed < SDLK_LAST) {
         ui->held[pressed] = true;
     }
+    /* B, and X as B, act once per press: their repeats while held do
+     * nothing, so a held B never goes back more than one level. */
+    if (key == SDLK_ESCAPE && was_held) {
+        return;
+    }
     prepare_launch(ui);
     /* A message is drawn over Details, so it takes the keys first. */
     if (ui->details.open && screen_message_key(ui, key)) {
