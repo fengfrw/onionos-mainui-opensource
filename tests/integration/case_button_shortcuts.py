@@ -210,4 +210,37 @@ for value in ("fav", "glo"):
     shortcuts(x=value)
     assert run("REED+XS-X") == (menu, None) and favorites() == ["G01"], value
     assert run("REED+XSDDDE-X") == (keyboard, None) and favorites() == ["G01"], value
+
+# false or "disable" turns a button off: nothing on any screen, also held,
+# repeated or released, and nothing in Game Info; the other button keeps its
+# shortcut. On the on-screen keyboard X and Y still type a space and erase.
+FAVORITES.write_text(SAVED)
+unlink_if_exists(FLAG)
+shortcuts()
+typed = {actions: run(actions)[0] for actions in ("REEDSDDDEX", "REEDSDDDEY")}
+for off in (False, "disable"):
+    for button in "XY":
+        shortcuts(**{button.lower(): off})
+        for place in ELSEWHERE + ["REED"]:
+            for press in (button, "+" + button + "+" + button + "-" + button):
+                shot, command = run(place + press)
+                assert command is None and shot == (screens.get(place) or run(place)[0]), \
+                    (off, button, place, press)
+        assert favorites() == ["G01"] and not FLAG.exists(), (off, button)
+        keyboard_press = "REEDSDDDE" + button
+        assert run(keyboard_press)[0] == typed[keyboard_press], (off, button)
+    shortcuts(x=off, y="fav")
+    assert run("REEDX")[1] is None and favorites() == ["G01"]
+    assert run("REEDY")[1] is None and favorites() == ["G00", "G01"], off
+    FAVORITES.write_text(SAVED)
+    shortcuts(x="glo", y=off)
+    assert run("REEDY") == (run("REED")[0], None) and not FLAG.exists()
+    assert run("REEDX")[1] == by_a and FLAG.exists()
+    FLAG.unlink()
+# Only false and exactly "disable": "Disable" is keymon's, so X is B, and 0
+# is no shortcut, so Y launches as A.
+shortcuts(x="Disable", y=0)
+assert run("REEDX") == (back_from_game, None)
+assert run("REEDY")[1] == by_a
+assert favorites() == ["G01"]
 print("X and Y shortcuts: fav and glo on either button, on release; X stays B otherwise")

@@ -50,8 +50,12 @@ MainUIShortcut mainui_button_shortcut(const char *sd, char button, char why[160]
     const cJSON *value = cJSON_GetObjectItemCaseSensitive(root, button == 'X' ? "mainui_button_x"
                                                                               : "mainui_button_y");
     MainUIShortcut result = MAINUI_SHORTCUT_KEYMON;
+    /* false, or exactly "disable", turns the button off in MainUI. */
+    if (cJSON_IsFalse(value) || (cJSON_IsString(value) && !strcmp(value->valuestring, "disable"))) {
+        result = MAINUI_SHORTCUT_DISABLED;
+    }
     /* keymon keeps its empty default unless the value is text. */
-    if (!cJSON_IsString(value) || !*value->valuestring) {
+    else if (!cJSON_IsString(value) || !*value->valuestring) {
         result = MAINUI_SHORTCUT_NONE;
     }
     else if (!strcmp(value->valuestring, "glo")) {

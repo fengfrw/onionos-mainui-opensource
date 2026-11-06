@@ -1769,6 +1769,20 @@ bool mainui_dispatch_event(MainUIApp *ui, SDL_Event *event)
         ui->confirmation = -1;
         ui->return_latched = false;
     }
+    /* X or Y turned off in keymap.json (false or "disable"): its presses,
+     * repeats and releases do nothing anywhere in MainUI, and none is armed
+     * to act on its release, but on the on-screen keyboard, where X types a
+     * space and Y erases as always. */
+    if ((event->type == SDL_KEYDOWN || event->type == SDL_KEYUP) && ui->sd &&
+        !ui->name_input.open && !ui->search_keyboard) {
+        SDLKey key = mainui_input_key(event->key.keysym.sym);
+        char button = key == SDLK_LSHIFT ? 'X' : key == SDLK_LALT ? 'Y' : 0;
+        if (button && mainui_button_shortcut(ui->sd, button, NULL) == MAINUI_SHORTCUT_DISABLED) {
+            ui->held[key] = false;
+            *(button == 'X' ? &ui->x_armed : &ui->y_armed) = false;
+            return true;
+        }
+    }
     if (event->type == SDL_KEYUP) {
         SDLKey released = mainui_input_key(event->key.keysym.sym);
         if (released >= 0 && released < SDLK_LAST) {
