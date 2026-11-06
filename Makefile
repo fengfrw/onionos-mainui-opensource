@@ -71,7 +71,7 @@ HOST_BIN   := $(O)/MainUI-dev $(O)/unit-tests $(O)/core-probe \
 
 # ---------------------------------------------------------------- targets
 
-.PHONY: all check check-unit check-integration check-host-deps device \
+.PHONY: all check check-unit check-integration check-host-deps check-stack device \
         check-device format clean help
 .DEFAULT_GOAL := all
 
@@ -246,3 +246,8 @@ check-no-hardlinks: $(HOST_BIN) $(O)/no-hardlinks.so
 
 check-vfat: $(HOST_BIN) $(O)/no-hardlinks.so
 	sh tests/vfat.sh $(O)
+
+# Host-only stack regression audit. Does not change ordinary make check, and
+# deliberately reports rather than fails on host-specific large frames.
+check-stack:
+	$(MAKE) O=$(O)/stack WARN="$(WARN) -Wstack-usage=8192 -Wno-error=stack-usage=" all
