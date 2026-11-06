@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 
 static const char *string(const cJSON *object, const char *key)
 {
@@ -535,12 +536,19 @@ bool mainui_session_launch(const char *directory, const MainUILaunchSource *sour
      * Recents, taken to be this launch: it must be there before the launch is
      * published, or GLO would remove another game. If the launch then fails,
      * the line stays: Recents skips the repeated game. */
-    if (ok && source->alternate && !mainui_recent_push(sd, record)) {
+    /* runtime.sh removes it after any .miyoocmd shortcut too (an import
+     * shortcut, say), whose line must likewise go first without dropping
+     * the list's last game. */
+    const cJSON *rom = cJSON_GetObjectItemCaseSensitive(record, "rompath");
+    size_t length = cJSON_IsString(rom) ? strlen(rom->valuestring) : 0;
+    bool command = length > 9 && !strcasecmp(rom->valuestring + length - 9, ".miyoocmd");
+    bool pushed = source->alternate || command;
+    if (ok && pushed && !mainui_recent_push(sd, record)) {
         ok = false;
         snprintf(error, 256, "Recents cannot be written.");
     }
     ok = ok && mainui_launch_publish(directory, record, &legacy, resume, error);
-    if (ok && !source->alternate && !mainui_recent_add(sd, record)) {
+    if (ok && !pushed && !mainui_recent_add(sd, record)) {
         fprintf(stderr, "Cannot save Recent game; launch handoff remains committed.\n");
     }
     if (!ok && source->alternate && flag_path) {
