@@ -49,6 +49,10 @@ typedef struct {
     bool hooked;            /* its sound replaces the theme's music */
     bool sleeping;          /* the device sleeps: a video stands still */
     Uint32 shown_at;
+    /* A video shown waits MAINUI_MEDIA_VIDEO_DELAY_MS before it starts, so
+     * moving past it never opens a decoder; any move cancels it. */
+    bool video_pending;
+    Uint32 video_at;
     char library_dir[4096]; /* Onion's FFmpeg: <sd>/.tmp_update/lib/parasyte */
 } MainUIMediaViewer;
 
@@ -68,7 +72,11 @@ bool mainui_media_open(MainUIMediaViewer *viewer, const char *rom_root, const ch
  * keyframe. Every key is
  * taken while the gallery is open. */
 void mainui_media_key(MainUIMediaViewer *viewer, SDLKey key, SDL_Surface *screen);
-/* snapshot: wait for a video's first frame, to draw a given state. */
+/* A video starts once it has been shown this long; snapshots start it at
+ * once. */
+#define MAINUI_MEDIA_VIDEO_DELAY_MS 100
+/* snapshot: wait for a video's first frame, to draw a given state. A video
+ * shown starts here once its delay is over. */
 void mainui_media_draw(MainUIMediaViewer *viewer, MainUITheme *theme, SDL_Surface *screen,
                        bool snapshot);
 /* Milliseconds until the playing video's next frame is due, or -1. */

@@ -216,7 +216,7 @@ Only the description scrolls. Without the file Game Info is as before.
 ## Game Info's media gallery
 
 Right in Game Info opens a fullscreen gallery of the game's media, when it has any; otherwise Right does nothing there. Right shows the next item, and on the last one does nothing, and Left the previous one; Left on the first item goes back to Game Info, as B does from any item.
-On a video, A pauses it (a pause sign shows at the bottom left) and plays it on, and L and R jump about 5 seconds back and forward; paused, it stays paused there.
+A video starts once it has been shown for 100 ms, so moving past it with Right or Left starts nothing. On a video, A pauses it (a pause sign shows at the bottom left) and plays it on, and L and R jump about 5 seconds back and forward; paused, it stays paused there.
 A jump lands on a keyframe, a picture the video can start from, and shows it at once: forward the first one at least 5 seconds on, back the last one at least 5 seconds back, so it can go further than 5 seconds; past the last one the video starts again.
 Videos with a keyframe every second or two, such as `ffmpeg -g 30` makes at 30 frames per second, jump closest to 5 seconds. While the device sleeps a video stands still, and on waking it goes on from there. Other buttons do nothing in the gallery, and the X and Y shortcuts do not act there.
 

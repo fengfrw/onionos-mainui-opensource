@@ -101,6 +101,7 @@ static void release(MainUIMediaViewer *viewer)
         viewer->image = NULL;
     }
     viewer->image_failed = false;
+    viewer->video_pending = false;
 }
 
 /* The image scaled to fit the screen, keeping its shape, on black, in the
@@ -145,24 +146,33 @@ static SDL_Surface *fitted(const char *path, const SDL_Surface *screen)
     return result;
 }
 
+/* The video shown starts: with sound when the theme's mixer can take it,
+ * in place of the theme's music, which goes on when the video is left. */
+static void start_video(MainUIMediaViewer *viewer, SDL_Surface *screen)
+{
+    const MainUIMediaItem *item = &viewer->items[viewer->index];
+    viewer->video_pending = false;
+    viewer->shown_at = SDL_GetTicks();
+    int rate = mainui_audio_rate();
+    viewer->video = mainui_video_open(item->path, *viewer->library_dir ? viewer->library_dir : NULL,
+                                      screen, screen->w, screen->h, rate);
+    viewer->image_failed = !viewer->video;
+    viewer->hooked = viewer->video && rate && mainui_audio_hook(mainui_video_sound, viewer->video);
+    if (viewer->sleeping) {
+        mainui_video_hold(viewer->video, true, SDL_GetTicks());
+    }
+}
+
 static void show(MainUIMediaViewer *viewer, SDL_Surface *screen)
 {
+    (void)screen;
     release(viewer);
     const MainUIMediaItem *item = &viewer->items[viewer->index];
     viewer->shown_at = SDL_GetTicks();
     if (item->kind == MAINUI_MEDIA_VIDEO) {
-        /* With sound when the theme's mixer can take it, in place of the
-         * theme's music, which goes on when the video is left. */
-        int rate = mainui_audio_rate();
-        viewer->video =
-            mainui_video_open(item->path, *viewer->library_dir ? viewer->library_dir : NULL, screen,
-                              screen->w, screen->h, rate);
-        viewer->image_failed = !viewer->video;
-        viewer->hooked =
-            viewer->video && rate && mainui_audio_hook(mainui_video_sound, viewer->video);
-        if (viewer->sleeping) {
-            mainui_video_hold(viewer->video, true, SDL_GetTicks());
-        }
+        /* Started by mainui_media_draw() once it has stayed shown. */
+        viewer->video_pending = true;
+        viewer->video_at = viewer->shown_at + MAINUI_MEDIA_VIDEO_DELAY_MS;
     }
     else {
         viewer->image = fitted(item->path, screen);
@@ -270,6 +280,9 @@ void mainui_media_draw(MainUIMediaViewer *viewer, MainUITheme *theme, SDL_Surfac
     if (!viewer->open) {
         return;
     }
+    if (viewer->video_pending && (snapshot || (Sint32)(SDL_GetTicks() - viewer->video_at) >= 0)) {
+        start_video(viewer, screen);
+    }
     SDL_Surface *shown = viewer->image;
     const char *error = viewer->image_failed
                             ? viewer->items[viewer->index].kind == MAINUI_MEDIA_VIDEO
@@ -303,6 +316,10 @@ void mainui_media_draw(MainUIMediaViewer *viewer, MainUITheme *theme, SDL_Surfac
 
 int mainui_media_due(const MainUIMediaViewer *viewer, Uint32 now)
 {
+    if (viewer->open && viewer->video_pending) {
+        Sint32 until = (Sint32)(viewer->video_at - now);
+        return until > 0 ? (int)until : 0;
+    }
     return viewer->open && viewer->video ? mainui_video_due(viewer->video, now) : -1;
 }
 

@@ -1,12 +1,17 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 #include "app/details.h"
 #include "platform/input.h"
+#include "ui/media_viewer.h"
 #include "ui/name_input.h"
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
 #include <assert.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 static MainUINameResult press(MainUINameInput *input, SDLKey key, Uint16 code)
 {
@@ -16,8 +21,55 @@ static MainUINameResult press(MainUINameInput *input, SDLKey key, Uint16 code)
     return mainui_name_input_key(input, &event);
 }
 
+/* A gallery video starts only once it has stayed shown: moving past it
+ * opens no decoder. */
+static void gallery_video_waits(void)
+{
+    char root[] = "/tmp/mainui-gallery-XXXXXX", path[4096];
+    assert(mkdtemp(root));
+    const char *dirs[] = {"media", "media/box2dfront", "media/videos"};
+    for (int i = 0; i < 3; i++) {
+        snprintf(path, sizeof path, "%s/%s", root, dirs[i]);
+        assert(!mkdir(path, 0755));
+    }
+    const char *files[] = {"media/box2dfront/Game.png", "media/videos/Game.mp4"};
+    for (int i = 0; i < 2; i++) {
+        snprintf(path, sizeof path, "%s/%s", root, files[i]);
+        FILE *file = fopen(path, "w");
+        assert(file && !fclose(file));
+    }
+    char rom[4096];
+    snprintf(rom, sizeof rom, "%s/Game.nes", root);
+    SDL_Surface *screen =
+        SDL_CreateRGBSurface(SDL_SWSURFACE, 640, 480, 32, 0xff0000, 0xff00, 0xff, 0);
+    MainUIMediaViewer viewer = {0};
+    assert(screen && mainui_media_open(&viewer, root, rom, NULL, screen) && viewer.count == 2);
+    assert(!viewer.video_pending && mainui_media_due(&viewer, SDL_GetTicks()) == -1);
+    mainui_media_key(&viewer, SDLK_RIGHT, screen); /* to the video: it waits */
+    Uint32 now = SDL_GetTicks();
+    int due = mainui_media_due(&viewer, now);
+    assert(viewer.video_pending && !viewer.video && due >= 0 && due <= MAINUI_MEDIA_VIDEO_DELAY_MS);
+    assert(mainui_media_due(&viewer, now + MAINUI_MEDIA_VIDEO_DELAY_MS) == 0);
+    mainui_media_key(&viewer, SDLK_LEFT, screen); /* moved on: no start */
+    assert(!viewer.video_pending && !viewer.video && mainui_media_due(&viewer, now) == -1);
+    mainui_media_key(&viewer, SDLK_RIGHT, screen);
+    mainui_media_key(&viewer, SDLK_ESCAPE, screen); /* closed: no start */
+    assert(!viewer.open && !viewer.video_pending);
+    SDL_FreeSurface(screen);
+    for (int i = 1; i >= 0; i--) {
+        snprintf(path, sizeof path, "%s/%s", root, files[i]);
+        assert(!remove(path));
+    }
+    for (int i = 2; i >= 0; i--) {
+        snprintf(path, sizeof path, "%s/%s", root, dirs[i]);
+        assert(!rmdir(path));
+    }
+    assert(!rmdir(root));
+}
+
 int mainui_suite_name_input(void)
 {
+    gallery_video_waits();
     /* Patcher meta_input: a short final advance clamps the line offset, and
      * paging back subtracts a full visible page from that clamped position. */
     MainUIDetails details = {.line_count = 22, .lines_per_page = 10};
