@@ -464,6 +464,11 @@ int mainui_wait_interval(const MainUIApp *ui, Uint32 now)
         mainui_console_mode(ui) == MAINUI_CONSOLE_CAROUSEL && interval > MAINUI_MARQUEE_FRAME_MS) {
         interval = MAINUI_MARQUEE_FRAME_MS;
     }
+    /* Game Info description animates only while visible and overflowing. */
+    int details_due = mainui_details_auto_due(&ui->details, now);
+    if (details_due >= 0 && details_due < interval) {
+        interval = details_due > 0 ? details_due : 1;
+    }
     /* A playing video wakes when its next decoded frame is due; the decoder
      * posts an event for a frame decoded later. */
     int due = mainui_media_due(&ui->details.media, now);

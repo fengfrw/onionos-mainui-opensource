@@ -38,6 +38,9 @@ typedef struct {
      * .romListVideoPreview (see mainui_config_video_preview()). */
     int video_preview_delay;
     bool video_preview_fullscreen;
+    /* Optional downward scrolling of the Game Info description. Missing
+     * .gameInfoAutoScroll keeps the reference manual-only behavior. */
+    int details_auto_delay, details_auto_speed;
 } MainUIConfig;
 
 /* Parse nullable file contents using the patcher's prefix/read-length rules.
@@ -55,6 +58,9 @@ void mainui_config_parse(MainUIConfig *out, const char *rows, const char *font, 
                          const char *scroll);
 /* Files are read from an explicit config directory; never writes user data. */
 void mainui_config_load(MainUIConfig *out, const char *directory);
+/* NULL disables scrolling; an existing empty marker uses 2000 ms and
+ * 20 pixels/s. Invalid fields use their defaults, values are clamped. */
+void mainui_config_details_auto(const char *text, int *delay, int *speed);
 
 typedef struct {
     int id;

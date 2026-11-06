@@ -1394,8 +1394,14 @@ static void dispatch_key(MainUIApp *ui, SDL_Event *event)
         return;
     }
     if (ui->details.open) {
+        if (ui->details.swallow_page_key == key) {
+            return;
+        }
+        if ((key == SDLK_HOME || key == SDLK_END) && !ui->details.lines_per_page) {
+            mainui_details_prepare(&ui->details, &ui->theme);
+        }
         mainui_details_key(&ui->details, ui->catalog, ui->library, ui->favorites, &ui->view,
-                           ui->config.rows, key);
+                           ui->config.rows, key, &ui->config);
         ui->cached_start = -1;
         ui->selected_at = SDL_GetTicks();
         return;
@@ -1418,7 +1424,7 @@ static void dispatch_key(MainUIApp *ui, SDL_Event *event)
     }
     if (game_list && ui->catalog && key == SDLK_RIGHT &&
         mainui_details_open(&ui->details, ui->catalog, ui->library, ui->favorites,
-                            ui->view.selected, &ui->preview)) {
+                            ui->view.selected, &ui->preview, &ui->config)) {
         ui->letter_jump.active = false;
         return;
     }
@@ -1725,6 +1731,7 @@ bool mainui_dispatch_event(MainUIApp *ui, SDL_Event *event)
         ui->list_video.swallow = false;
         ui->list_video.swallow_key = SDLK_UNKNOWN;
         ui->letter_jump.active = false;
+        ui->details.swallow_page_key = SDLK_UNKNOWN;
         ui->confirmation = -1;
         ui->return_latched = false;
     }
@@ -1758,6 +1765,9 @@ bool mainui_dispatch_event(MainUIApp *ui, SDL_Event *event)
         if (ui->list_video.swallow && released == ui->list_video.swallow_key) {
             ui->list_video.swallow = false;
             ui->list_video.swallow_key = SDLK_UNKNOWN;
+        }
+        if (released == ui->details.swallow_page_key) {
+            ui->details.swallow_page_key = SDLK_UNKNOWN;
         }
     }
     /* Fullscreen list video: B and unbound X only dismiss the video. The

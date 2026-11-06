@@ -220,6 +220,34 @@ static bool config_read(const char *dir, const char *name, char *out, size_t siz
     return ok;
 }
 
+void mainui_config_details_auto(const char *text, int *delay, int *speed)
+{
+    *delay = 0;
+    *speed = 0;
+    if (!text) {
+        return;
+    }
+    *delay = 2000;
+    *speed = 20;
+    size_t length = bounded_length(text, 63), pos = 0, used;
+    size_t size = next_word(text, length, &pos);
+    bool valid;
+    if (size) {
+        int value = integer(text + pos, size, &used, &valid);
+        if (valid && used == size) {
+            *delay = clamp(value, 0, 30000);
+            pos += size;
+            size = next_word(text, length, &pos);
+            if (size) {
+                value = integer(text + pos, size, &used, &valid);
+                if (valid && used == size) {
+                    *speed = clamp(value, 5, 150);
+                }
+            }
+        }
+    }
+}
+
 void mainui_config_load(MainUIConfig *out, const char *directory)
 {
     char rows[13], font[13], repeat[32], scroll[4097], flag[2], video[32];
@@ -236,6 +264,10 @@ void mainui_config_load(MainUIConfig *out, const char *directory)
     out->show_expert = config_read(directory, ".showExpert", flag, sizeof flag);
     out->context_ellipsis = !config_read(directory, ".noContextMenuEllipsis", flag, sizeof flag);
     out->footer_alt = config_read(directory, ".mainuiFooterAltLayout", flag, sizeof flag);
+    char details[64];
+    mainui_config_details_auto(
+        config_read(directory, ".gameInfoAutoScroll", details, sizeof details) ? details : NULL,
+        &out->details_auto_delay, &out->details_auto_speed);
     out->video_preview_delay = mainui_config_video_preview(
         config_read(directory, ".romListVideoPreview", video, sizeof video) ? video : NULL,
         &out->video_preview_fullscreen);

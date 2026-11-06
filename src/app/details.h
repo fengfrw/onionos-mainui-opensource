@@ -10,6 +10,16 @@
 typedef struct {
     bool open, favorite;
     int scroll_line, lines_per_page, line_count, ordinal, total;
+    /* Description is the only scrolling region. Cached UTF-8 line offsets
+     * belong to this Game Info session and are freed on close. */
+    unsigned short *description_lines;
+    char *summary; /* preformatted genre/rating; owned with the Game Info session */
+    TTF_Font *description_font;
+    int description_y, description_line_height, scroll_px, scroll_max_px;
+    int auto_delay, auto_speed;
+    Uint32 auto_epoch, auto_hold_at;
+    bool auto_started, auto_paused, auto_finished, auto_held;
+    SDLKey swallow_page_key;
     char title[4096], system[4096], rom[MAINUI_PATH_MAX];
     MainUIMetadata metadata;
     MainUIPreview *preview;
@@ -25,7 +35,7 @@ typedef struct {
 
 bool mainui_details_open(MainUIDetails *details, MainUICatalog *catalog,
                          const MainUILibrary *library, const MainUILibrary *favorites, int row,
-                         MainUIPreview *preview);
+                         MainUIPreview *preview, const MainUIConfig *config);
 /* The ROM file of a list row's game, on this host, and its console's ROM
  * folder, found as Game Info finds them (the media folder is there). False
  * for folders and rows that are not games. */
@@ -35,17 +45,24 @@ bool mainui_details_locate(MainUICatalog *catalog, const MainUILibrary *library,
  * B/Left closes. L2/R2 moves one description page. */
 void mainui_details_key(MainUIDetails *details, MainUICatalog *catalog,
                         const MainUILibrary *library, const MainUILibrary *favorites,
-                        MainUIViewport *view, int rows, SDLKey key);
+                        MainUIViewport *view, int rows, SDLKey key, const MainUIConfig *config);
 /* Before drawing: advance the cover request without waiting (wait_ms 0), so a
  * slow decode never holds up input; it is drawn when it is done. Snapshots
  * pass MAINUI_PREVIEW_WAIT_FOREVER. */
 void mainui_details_progress(MainUIDetails *details, Uint32 wait_ms);
 /* The Favorite markers were reloaded: update the shown star. */
 void mainui_details_markers(MainUIDetails *details, const MainUILibrary *favorites);
+/* Precompute layout before queued page navigation, even when a frame is skipped. */
+void mainui_details_prepare(MainUIDetails *details, MainUITheme *theme);
 void mainui_details_draw(MainUIDetails *details, MainUITheme *theme, SDL_Surface *screen);
 /* Right opens the game's media gallery when it has any (see media_viewer.h);
  * else it does nothing. */
 void mainui_details_media(MainUIDetails *details, const char *sd, SDL_Surface *screen);
+/* UI-thread animation. Due returns -1 when idle. Hold freezes its clock for
+ * sleep, dialogs and the media gallery; it never starts a worker or timer. */
+void mainui_details_auto_hold(MainUIDetails *details, bool hold, Uint32 now);
+int mainui_details_auto_due(const MainUIDetails *details, Uint32 now);
+bool mainui_details_auto_step(MainUIDetails *details, Uint32 now);
 /* Also closes the gallery, stopping any video. */
 void mainui_details_close(MainUIDetails *details);
 #endif

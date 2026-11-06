@@ -196,6 +196,14 @@ A menu shows the rows listed for its section, in that order, that the selection 
 A missing section keeps its default menu. Unknown and repeated IDs are skipped. A missing file gives the default menus, and so does a file that is not a JSON object, which the log notes once (`[menu] ... game-menu.json is not a JSON object`).
 The file is read when MainUI starts and never written. Confirmations still ask as before. The main menu's context menu (`main-menu.json`) and Apps are not affected; the console page's menu is set with `menu` in [`console-view.json`](#carousel-and-list).
 
+## Game Info's description
+
+L2 and R2 move Game Info's description a page at a time, as before. With a file named `.gameInfoAutoScroll` in `.tmp_update/config`, the description also scrolls down on its own, pixel by pixel, once a game's Game Info has shown for a delay, and stops at its last full page.
+The file holds the delay in milliseconds and the speed in pixels per second, separated by a comma or spaces: `1500,30`. Empty, it is `2000,20`. Delays are kept within 0 to 30000 and speeds within 5 to 150. A delay that is not a number keeps both defaults, and a speed that is not one keeps its own.
+Before the scrolling starts, L2 or R2 moves a page at once and the scrolling no longer starts. Once it moves, the first L2 or R2 press only stops it where it is, also when held; the next presses move a page from there as before.
+A message, the context menu, the gallery and sleep pause it, and it goes on after them. Up and Down show another game, whose description starts again after the delay.
+Only the description scrolls. Without the file Game Info is as before.
+
 ## Game Info's media gallery
 
 Right in Game Info opens a fullscreen gallery of the game's media, when it has any; otherwise Right does nothing there. Right shows the next item, and on the last one does nothing, and Left the previous one; Left on the first item goes back to Game Info, as B does from any item.

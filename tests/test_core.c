@@ -53,6 +53,18 @@ int mainui_suite_core(void)
      * 0..30000, or 1000 without one; then cover (the default) or
      * fullscreen. */
     CHECK(c.video_preview_delay == -1 && !c.video_preview_fullscreen);
+    CHECK(c.details_auto_speed == 0);
+    int auto_delay, auto_speed;
+    mainui_config_details_auto(NULL, &auto_delay, &auto_speed);
+    CHECK(auto_delay == 0 && auto_speed == 0);
+    mainui_config_details_auto("", &auto_delay, &auto_speed);
+    CHECK(auto_delay == 2000 && auto_speed == 20);
+    mainui_config_details_auto("1500,30", &auto_delay, &auto_speed);
+    CHECK(auto_delay == 1500 && auto_speed == 30);
+    mainui_config_details_auto("-30,9999", &auto_delay, &auto_speed);
+    CHECK(auto_delay == 0 && auto_speed == 150);
+    mainui_config_details_auto("bad,text", &auto_delay, &auto_speed);
+    CHECK(auto_delay == 2000 && auto_speed == 20);
 
     const struct {
         const char *text;

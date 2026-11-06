@@ -217,6 +217,12 @@ static void update_list_video(MainUIApp *ui)
 
 void mainui_prepare_frame(MainUIApp *ui)
 {
+    Uint32 now = SDL_GetTicks();
+    bool hidden_details = ui->details.media.open || *ui->message_title || ui->context_open ||
+                          ui->confirmation >= 0 ||
+                          (ui->device_enabled && ui->device_status.sleeping == 1);
+    mainui_details_auto_hold(&ui->details, hidden_details, now);
+    mainui_details_auto_step(&ui->details, now);
     /* Consoles listed keep a list's window, also after the grid's page was
      * saved or restored for them. */
     if (mainui_console_mode(ui) == MAINUI_CONSOLE_LIST) {

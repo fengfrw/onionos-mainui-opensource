@@ -180,7 +180,7 @@ static void thumbnail_cache(const char *sd)
     for (int i = 0; i < CACHE_ITEMS; ++i) {
         /* Opening never waits for a cover; the frame's progress step does,
          * in deterministic mode as snapshots use it. */
-        assert(mainui_details_open(&details, catalog, NULL, NULL, i, preview));
+        assert(mainui_details_open(&details, catalog, NULL, NULL, i, preview, NULL));
         if (!i) { /* nothing cached after close: the decode runs on its own */
             assert(!preview->image && preview->thread && preview->pending);
         }
@@ -192,14 +192,14 @@ static void thumbnail_cache(const char *sd)
     }
     /* Enter from the list cache, navigate in details, then press B. All source
      * images are gone, so a separate cache or a reload would lose the cover. */
-    assert(mainui_details_open(&details, catalog, NULL, NULL, 0, preview));
+    assert(mainui_details_open(&details, catalog, NULL, NULL, 0, preview, NULL));
     assert(preview->image); /* cached: shown at once, without waiting */
     MainUIViewport detail_view = {.total = ITEM_COUNT, .selected = 0};
-    mainui_details_key(&details, catalog, NULL, NULL, &detail_view, 6, SDLK_DOWN);
+    mainui_details_key(&details, catalog, NULL, NULL, &detail_view, 6, SDLK_DOWN, NULL);
     mainui_details_progress(&details, MAINUI_PREVIEW_WAIT_FOREVER);
     assert(detail_view.selected == 1 && details.preview == preview && preview->image);
     SDL_Surface *detail_image = preview->image;
-    mainui_details_key(&details, catalog, NULL, NULL, &detail_view, 6, SDLK_ESCAPE);
+    mainui_details_key(&details, catalog, NULL, NULL, &detail_view, 6, SDLK_ESCAPE, NULL);
     assert(!details.open && preview->image == detail_image);
     mainui_preview_request(preview, catalog, NULL, detail_view.selected, false);
     assert(preview->image == detail_image && !preview->pending && !preview->thread);
