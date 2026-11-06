@@ -1025,6 +1025,14 @@ bool mainui_screen_list_key(MainUIApp *ui, SDLKey key)
                                        !ui->console_view.grid_no_wrap);
                 return true;
             }
+            /* Stock's Up and Down go round the column within the page, or
+             * stop at its ends without "wrap". */
+            if (!carousel && ui->console_view.grid_stock && (key == SDLK_UP || key == SDLK_DOWN)) {
+                mainui_grid_move_stock_vertical(
+                    &ui->view, key == SDLK_DOWN ? 1 : -1, ui->catalog == ui->expert ? 3 : 4,
+                    ui->catalog == ui->expert ? 3 : 2, !ui->console_view.grid_no_wrap);
+                return true;
+            }
             if (!carousel && ui->console_view.grid_no_wrap &&
                 ((horizontal > 0 && ui->view.selected >= ui->view.total - 1) ||
                  (horizontal < 0 && ui->view.selected <= 0))) {

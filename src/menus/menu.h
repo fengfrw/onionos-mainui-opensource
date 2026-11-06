@@ -32,8 +32,9 @@ void mainui_menu_load(MainUIMenu *menu, const char *directory, const MainUIConfi
 const char *mainui_menu_label(MainUIMenuSection section);
 const char *mainui_menu_icon(MainUIMenuSection section);
 /* Normalize paged grid navigation. Horizontal moves wrap over real entries;
- * vertical moves retain columns where possible. Empty lists stay unselected.
- */
+ * vertical moves keep their column, staying put where it has no entry above
+ * or below; page moves stop at the first and last entry. Empty lists stay
+ * unselected. */
 void mainui_grid_restore(MainUIViewport *view, int total, int selected, int columns, int rows);
 void mainui_grid_move(MainUIViewport *view, int horizontal, int vertical, int pages, int columns,
                       int rows);
@@ -43,4 +44,9 @@ void mainui_grid_move(MainUIViewport *view, int horizontal, int vertical, int pa
  * page is short of it. Past the last page to the first and the reverse when
  * wrap is set, else it stays. */
 void mainui_grid_move_stock(MainUIViewport *view, int horizontal, int columns, int rows, bool wrap);
+/* Stock's Up and Down: within the column on the page, over the rows a short
+ * last page fills in it, round its ends when wrap is set, else stopping
+ * there; never sideways or onto another page. */
+void mainui_grid_move_stock_vertical(MainUIViewport *view, int vertical, int columns, int rows,
+                                     bool wrap);
 #endif

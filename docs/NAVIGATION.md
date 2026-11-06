@@ -40,12 +40,13 @@ The Games grid shows 4 columns by 2 rows per page, the Expert grid 3 by 3.
 | Button | Moves to |
 | --- | --- |
 | Right / Left | The next / previous console in reading order: along the row, then on to the start of the next row, then on to the next page. At the end of the list it wraps to the first console, and Left on the first console wraps to the last. |
-| Down / Up | The console below / above in the same column, also onto the next or previous page. It stops at the first and last console instead of wrapping; on a short last page it lands on the last console. |
+| Down / Up | The console below / above in the same column, also onto the next or previous page. Where there is none, in the first row, the last, or a column the short last row does not reach, it stays: it never moves sideways or wraps. With the stock navigation, below, it goes round the column within the page, or with `"wrap": false` stops at its ends. |
 | R / L, R2 / L2 | The same position one page forward / back, stopping at the first and last console. Stock pages with R2 and L2 only. |
 
 **Differs from stock:** in stock MainUI, Right on the last console of the top row opens the next page at its top-left console. Here Right always takes the next console in order, which is the first console of the row below on the same page. Every console is then reached by pressing Right repeatedly, and the cursor never skips the rest of a page.
 
 With `"grid": {"navigation": "stock"}` in [`console-view.json`](#carousel-and-list), Right at the end of a row goes to the first console of the same row on the next page, and Left at its start to the same row's last console on the page before, as stock does from the top row; on a short page it lands on the last console.
+Up and Down then stay on the page, going round its column: Up from the first row goes to the column's last console on that page, and Down from there back to the first; a column with one console on a short page stays.
 Past the last page Right goes round to the first, unless `"wrap": false`, which also stops Right and Left at the first and last console in the default navigation. Only the top row's move is known from stock; the lower rows follow the same rule.
 
 ### Carousel and list
@@ -95,8 +96,8 @@ Past the last page Right goes round to the first, unless `"wrap": false`, which 
 | `carousel.repeat_ms` | carousel | least ms between moves with Right and Left, 0 to 400; while slides are on, a move also waits for the slide | 0: one move per slide, or with slides off no limit |
 | `carousel.vsync` | carousel | `false`: draw each frame without waiting for the screen's refresh. On the device only; the wait stops by itself where the screen refuses it or it takes over 50 ms | `true`: wait for the refresh before each frame is copied |
 | `carousel.wrap` | carousel | `false`: nothing left of the first console or right of the last, and Right, Left, R2 and L2 stop there | `true`: the row goes round, the last consoles left of the first, and the reverse |
-| `grid.navigation` | grid | `"stock"`: Right and Left page at a row's ends, below | `"linear"` |
-| `grid.wrap` | grid | `false`: Right and Left stop at the first and last console | `true` |
+| `grid.navigation` | grid | `"stock"`: Right and Left page at a row's ends, and Up and Down go round the page's column, below | `"linear"` |
+| `grid.wrap` | grid | `false`: Right and Left stop at the first and last console, and with stock navigation Up and Down at the column's ends | `true` |
 | `list.folder_icon` | list | `false` hides the folder icon | shown |
 | `list.thumbs` | list | `false`: no console covers in the list, though the carousel still shows its pictures | shown with `thumbs` |
 
