@@ -132,13 +132,10 @@ static void update_list_video(MainUIApp *ui)
                 !ui->search_keyboard && !ui->launch_pending && !ui->catalog_job.thread &&
                 !ui->letter_jump.active && ui->device_status.sleeping != 1 &&
                 ui->view.selected >= 0 && ui->view.selected < ui->view.total;
+    /* Covered, left or asleep: a dismissed video stays dismissed for its
+     * game, until another is selected. */
     if (!list) {
-        if (ui->device_status.sleeping == 1) {
-            mainui_list_video_sleep(preview);
-        }
-        else {
-            mainui_list_video_stop(preview);
-        }
+        mainui_list_video_hide(preview);
         return;
     }
     if (*preview->key && !strcmp(preview->key, ui->selected_identity)) {
@@ -267,13 +264,17 @@ void mainui_prepare_frame(MainUIApp *ui)
     snprintf(identity, sizeof identity, "%d:%d:%p:%p:%s:%s:%s", section, ui->confirmation,
              (void *)ui->catalog, (void *)ui->library, container ? container : "", key ? key : "",
              label ? label : "");
-    if (strcmp(identity, ui->selected_identity) || ui->confirmation >= 0) {
+    bool selection_changed = strcmp(identity, ui->selected_identity) || ui->confirmation >= 0;
+    if (selection_changed) {
         memcpy(ui->selected_identity, identity, strlen(identity) + 1);
         ui->selected_at = SDL_GetTicks();
     }
     ui->sound_section = section;
     ui->sound_selection = selection;
-    ui->animate = ui->letter_jump.active;
+    /* No frame may be drawn while queued input is coalesced. Keep the
+     * previously presented marquee state for that interval, but never
+     * carry it across a changed selection. */
+    ui->animate = (ui->presented_animating && !selection_changed) || ui->letter_jump.active;
     update_list_video(ui);
     SDL_Event queued_input;
     ui->draw_frame =
@@ -330,6 +331,16 @@ bool mainui_load_deferred_icons(MainUIApp *ui)
 
 bool mainui_frame_current(const MainUIApp *ui, Uint32 now)
 {
+    /* A video and scrolling title are independent wake sources. Cap their
+     * combined idle presentations to the marquee cadence (~25 fps); the
+     * decoder keeps running, and the next tick uses its latest frame.
+     * Do not defer input, status changes, gallery, or fullscreen playback. */
+    if (ui->presented_animating && ui->list_video.video && !ui->list_video.fullscreen &&
+        idle_unchanged(ui, now, MARQUEE_REPAINT_MS) &&
+        (Sint32)(now - ui->last_screen_present_at) < MAINUI_MARQUEE_FRAME_MS - 5) {
+        mainui_count_add("video-marquee-coalesced", 1);
+        return true;
+    }
     /* A video's new frame while a title scrolls on paced frames waits for
      * the next of them, which draws both: drawn at once, it came between
      * the title's frames and held the next one up, so the title stuttered. */
@@ -484,7 +495,11 @@ static void draw_list_row(MainUIApp *ui, int i, Uint32 elapsed, const SDL_Rect *
     if (selected && ui->config.scroll_status == 2 && elapsed >= (unsigned)ui->config.scroll_delay &&
         label->w > activation_width) {
         MainUIBlit segments[2];
-        bool instant = ui->snapshot || ui->marquee_origin != ui->selected_at;
+        /* Keep scrolling tied to elapsed time while a list video plays.
+         * Decoded-frame events may interrupt paced marquee wakeups, so
+         * counting wakeups can make scrolling pause and then jump. */
+        bool instant = ui->snapshot || ui->marquee_origin != ui->selected_at ||
+                       (ui->list_video.frame && !ui->list_video.fullscreen);
         if (ui->config.scroll_bounce) {
             /* Travel until the end of the title meets the edge of the lane
              * (the cover's edge when one is shown), pause, and come back. A
@@ -545,6 +560,7 @@ static void present(MainUIApp *ui, const SDL_Rect *areas, int count)
                          1);
     }
     previous = now;
+    ui->last_screen_present_at = now;
     ui->presented_animating = ui->animate;
     SDL_Rect shown[2] = {{0, 0, 0, 0}, {0, 0, 0, 0}};
     count = areas && count > 0 ? (count > 2 ? 2 : count) : 0;
@@ -890,12 +906,20 @@ static void draw_partial(MainUIApp *ui, bool row_area, bool cover_area)
     }
     if (row_area) {
         int row = ui->view.selected - ui->view.start;
-        areas[count++] = (SDL_Rect){0, (Sint16)(60 + row * ui->config.row_height), 640,
-                                    (Uint16)ui->config.row_height};
+        /* If the video also changed, the cover pass recomposes everything
+         * to the right of edge, including this row. Do not draw and rotate
+         * those pixels a second time as part of the row pass. */
+        int width = cover_area ? (edge < 0 ? 0 : edge > 640 ? 640 : edge) : 640;
+        if (width > 0) {
+            areas[count++] = (SDL_Rect){0, (Sint16)(60 + row * ui->config.row_height),
+                                        (Uint16)width, (Uint16)ui->config.row_height};
+        }
     }
     if (cover_area) {
         edge = edge < 0 ? 0 : edge > 640 ? 640 : edge;
-        areas[count++] = (SDL_Rect){(Sint16)edge, 60, (Uint16)(640 - edge), 360};
+        if (edge < 640) {
+            areas[count++] = (SDL_Rect){(Sint16)edge, 60, (Uint16)(640 - edge), 360};
+        }
     }
     Uint32 elapsed = list_elapsed(ui);
     for (int a = alone ? count : 0; a < count; a++) {
@@ -953,8 +977,18 @@ bool mainui_draw_frame(MainUIApp *ui)
     Uint32 now = SDL_GetTicks();
     bool row = mainui_frame_marquee_only(ui, now), cover = cover_only(ui, now);
     if (row || cover) {
+        /* A cover-only redraw does not recompute whether the title moves. */
+        ui->animate = ui->presented_animating || ui->letter_jump.active;
         draw_partial(ui, row, cover);
         return true;
     }
-    return draw_full_frame(ui);
+    /* Only an actual full composition recomputes marquee animation. An
+     * unsuccessful one must preserve the previous state for event pacing. */
+    bool previous = ui->animate;
+    ui->animate = ui->letter_jump.active;
+    if (!draw_full_frame(ui)) {
+        ui->animate = previous;
+        return false;
+    }
+    return true;
 }

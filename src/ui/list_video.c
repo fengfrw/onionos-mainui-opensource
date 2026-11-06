@@ -33,7 +33,7 @@ void mainui_list_video_dismiss(MainUIListVideo *preview)
     preview->dismissed = true;
 }
 
-void mainui_list_video_sleep(MainUIListVideo *preview)
+void mainui_list_video_hide(MainUIListVideo *preview)
 {
     if (preview->dismissed) {
         close_video(preview);
@@ -41,6 +41,11 @@ void mainui_list_video_sleep(MainUIListVideo *preview)
     else {
         mainui_list_video_stop(preview);
     }
+}
+
+void mainui_list_video_sleep(MainUIListVideo *preview)
+{
+    mainui_list_video_hide(preview);
 }
 
 bool mainui_list_video_fullscreen(const MainUIListVideo *preview)

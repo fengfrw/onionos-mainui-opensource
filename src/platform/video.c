@@ -8,6 +8,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#if defined(__linux__)
+#include <unistd.h>
+#endif
 
 /* One frame shown and one decoded ahead: the decoder waits for a free one. */
 enum {
@@ -914,6 +917,15 @@ static bool too_large(MainUIVideo *video)
 static int run(void *context)
 {
     MainUIVideo *video = context;
+    /* The silent ROM-list decoder can monopolize one core. Linux schedules
+     * nice values per thread: favor the UI/marquee's frame deadlines. */
+#if defined(__linux__)
+    if (video->rate == 0) {
+        /* glibc warns of an unused result; failing to lower it is harmless. */
+        int niced = nice(5);
+        (void)niced;
+    }
+#endif
     if (!load(video)) {
         return 0;
     }

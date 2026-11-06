@@ -470,6 +470,14 @@ static void paced_wait(MainUIApp *ui, SDL_Event *event)
     }
     for (;;) {
         if (SDL_PollEvent(event)) {
+            /* Decoder notifications can arrive between paced marquee frames.
+             * Consume them here: the next 40 ms tick advances the video and
+             * title together. Otherwise each notification interrupts pacing
+             * even though render.c postpones the video redraw anyway.
+             * Never delay user input or other system events. */
+            if (event->type == SDL_USEREVENT && event->user.code == MAINUI_VIDEO_CODE) {
+                continue;
+            }
             return;
         }
         Sint32 remaining = (Sint32)(ui->marquee_due - SDL_GetTicks());

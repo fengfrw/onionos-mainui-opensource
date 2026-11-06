@@ -622,6 +622,61 @@ static void keymon_quiet_l1(MainUIApp *ui)
     key_event(ui, SDL_KEYUP, SDLK_PAGEUP, 0);
 }
 
+/* B and unbound X dismiss a fullscreen list preview without running the
+ * list's normal Back action. Repeats are swallowed until that physical key
+ * is released; Menu also dismisses before opening its context menu. */
+static void fullscreen_video_back(MainUIApp *ui)
+{
+    const SDLKey back[] = {SDLK_ESCAPE, SDLK_LSHIFT};
+    for (unsigned i = 0; i < sizeof back / sizeof back[0]; i++) {
+        reset(ui);
+        ui->list_video.fullscreen = true;
+        ui->list_video.frame = (SDL_Surface *)ui; /* no decoder to close */
+        assert(key_event(ui, SDL_KEYDOWN, back[i], 0));
+        assert(ui->list_video.dismissed && !ui->list_video.frame);
+        assert(ui->list_video.swallow && ui->list_video.swallow_key == back[i]);
+        assert(ui->held[back[i]] && ui->home_view.selected == 1);
+        assert(key_event(ui, SDL_KEYDOWN, back[i], 0));
+        assert(ui->home_view.selected == 1); /* repeat didn't Back */
+        assert(key_event(ui, SDL_KEYUP, back[i], 0));
+        assert(!ui->list_video.swallow && !ui->held[back[i]]);
+        assert(ui->list_video.swallow_key == SDLK_UNKNOWN);
+    }
+    reset(ui);
+    ui->list_video.fullscreen = true;
+    ui->list_video.frame = (SDL_Surface *)ui;
+    SDL_Event menu = {0};
+    menu.type = SDL_USEREVENT;
+    menu.user.code = MAINUI_MENU_RELEASE_CODE;
+    assert(mainui_dispatch_event(ui, &menu));
+    assert(ui->list_video.dismissed && !ui->list_video.frame);
+    reset(ui);
+}
+
+/* Frame coalescing must not discard the movement already presented. A new
+ * selection, however, must not inherit the previous title's animation. */
+static void coalesced_marquee(MainUIApp *ui)
+{
+    reset(ui);
+    /* Give the home viewport real entries: a bare reset() has no menu,
+     * so changing selected would not change the selection identity. */
+    ui->menu.count = 3;
+    ui->menu.sections[1] = MAINUI_MENU_FAVORITES;
+    ui->menu.sections[2] = MAINUI_MENU_GAMES;
+    mainui_prepare_frame(ui); /* establish the selection identity */
+    ui->presented_animating = true;
+    ui->animate = false;
+    mainui_prepare_frame(ui);
+    assert(ui->animate);
+    ui->config.scroll_delay = 0;
+    ui->selected_at = SDL_GetTicks() - 1000;
+    assert(mainui_marquee_moving(ui, SDL_GetTicks()));
+    ui->home_view.selected++;
+    mainui_prepare_frame(ui);
+    assert(!ui->animate);
+    reset(ui);
+}
+
 int mainui_suite_screen_events(void)
 {
     MainUIApp *ui = calloc(1, sizeof *ui);
@@ -632,6 +687,8 @@ int mainui_suite_screen_events(void)
     tick_wraparound(ui);
     idle_frame(ui);
     home_and_popups(ui);
+    fullscreen_video_back(ui);
+    coalesced_marquee(ui);
     start_is_consumed(ui);
     keyboard_priority(ui);
     held_confirmation(ui);

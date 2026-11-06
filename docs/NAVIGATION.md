@@ -75,7 +75,7 @@ Scrolling past games plays nothing: a video starts only once its game has been s
 A game without a video, or a video that cannot be played, keeps its cover, without a message. A game with a video but no cover shows the video where the cover would be, and titles stop at its edge as at a cover's.
 
 `fullscreen` (in any case; any other mode is `cover`) plays the video over the whole screen instead, header and footer too, fitted to it on black, also silently and repeating. The list stays until the video's first frame is ready, and comes back if the video cannot play.
-B closes the video and stays in the list; held down, it does nothing more until released. Any other button closes it and does what it does in the list: Up and Down select another game, whose video plays after the delay, A launches the game, Right opens Game Info and Select or Menu the context menu.
+B, and X where it acts as B, closes the video and stays in the list; held down, it does nothing more until released. Any other button closes it and does what it does in the list: Up and Down select another game, whose video plays after the delay, A launches the game, Right opens Game Info and Select or Menu the context menu, after which the video stays closed.
 A video closed this way does not play again until another game has been selected, also after sleep.
 
 ## Game-list context menus

@@ -77,6 +77,7 @@ int mainui_suite_timing(void)
     assert(strstr(output, "draw-ms 20"));
     assert(strstr(output, "scan-entries 20000 cache-build-ms 40000 scan-ms 60000"));
     assert(strstr(output, " discover-ms ") && strstr(output, " icon-ms "));
+    assert(strstr(output, " video-marquee-coalesced "));
     assert(!strstr(output, "unknown"));
     assert(!strstr(strstr(output, "[timing] ms session ") + 1, "[timing] ms session "));
     /* A second logged session consumes the same-boot handoff once. */

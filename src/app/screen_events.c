@@ -1443,6 +1443,11 @@ static void menu_release(MainUIApp *ui)
     if (ui->context_open || ui->catalog_job.thread || ui->name_input.open) {
         return;
     }
+    /* Menu is handled before normal key dispatch. Dismiss a fullscreen
+     * preview here so it cannot restart after the context menu closes. */
+    if (mainui_list_video_fullscreen(&ui->list_video)) {
+        mainui_list_video_dismiss(&ui->list_video);
+    }
     SDL_Event select;
     memset(&select, 0, sizeof select);
     select.type = SDL_KEYDOWN;
@@ -1518,6 +1523,7 @@ bool mainui_dispatch_event(MainUIApp *ui, SDL_Event *event)
         ui->x_armed = ui->y_armed = ui->select_armed = ui->start_armed = false;
         ui->select_brightness = false;
         ui->list_video.swallow = false;
+        ui->list_video.swallow_key = SDLK_UNKNOWN;
         ui->letter_jump.active = false;
         ui->confirmation = -1;
         ui->return_latched = false;
@@ -1544,26 +1550,29 @@ bool mainui_dispatch_event(MainUIApp *ui, SDL_Event *event)
         if (released == SDLK_RETURN) {
             ui->return_latched = false;
         }
-        if (released == SDLK_ESCAPE) {
+        if (ui->list_video.swallow && released == ui->list_video.swallow_key) {
             ui->list_video.swallow = false;
+            ui->list_video.swallow_key = SDLK_UNKNOWN;
         }
     }
-    /* A list's fullscreen video preview: B closes it and does nothing else,
-     * nor do its repeats; any other key closes it as it goes down, and acts
-     * as on the list, also the X and Y shortcuts, Select and Start, which
-     * act when released. Either way it stays closed until another game is
-     * selected. */
+    /* Fullscreen list video: B and unbound X only dismiss the video. The
+     * physical key that dismissed it is swallowed through its release, so
+     * its repeat cannot also back out of the ROM list. Bound X shortcuts
+     * still act normally on the list. */
     if (event->type == SDL_KEYDOWN && mainui_list_video_fullscreen(&ui->list_video) &&
         !(ui->device_enabled && ui->device_status.sleeping == 1)) {
+        SDLKey pressed = mainui_input_key(event->key.keysym.sym);
+        bool back = pressed == SDLK_ESCAPE || (pressed == SDLK_LSHIFT && !x_bound(ui));
         mainui_list_video_dismiss(&ui->list_video);
-        if (mainui_input_key(event->key.keysym.sym) == SDLK_ESCAPE) {
-            ui->held[SDLK_ESCAPE] = true;
+        if (back) {
+            ui->held[pressed] = true;
             ui->list_video.swallow = true;
+            ui->list_video.swallow_key = pressed;
             return true;
         }
     }
     if (event->type == SDL_KEYDOWN && ui->list_video.swallow &&
-        mainui_input_key(event->key.keysym.sym) == SDLK_ESCAPE) {
+        mainui_input_key(event->key.keysym.sym) == ui->list_video.swallow_key) {
         return true;
     }
     /* Key repeat from an A press that opened a confirmation or dismissed a

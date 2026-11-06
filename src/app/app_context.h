@@ -164,6 +164,7 @@ typedef struct {
     /* The last full frame drew the Games or Expert console grid. */
     bool systems_drawn;
     Uint32 active_at, presented_at;
+    Uint32 last_screen_present_at; /* Every present, including partial video/row updates. */
     int presented_battery, presented_wifi_signal;
     bool presented_charging;
     bool presented_wifi_online, presented_hotspot;

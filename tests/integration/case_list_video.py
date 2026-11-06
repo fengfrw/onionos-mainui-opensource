@@ -165,6 +165,13 @@ held = shot("BB", elapsed=60000)
 assert cover_shown(held) and not fullscreen(held)
 left = shot("B-BB", elapsed=60000)
 assert not cover_shown(left) and not fullscreen(left)
+# Select, as Menu does, closes it and opens the context menu; once the menu
+# closes, the same game keeps its cover, also after B closed the video before
+# the menu, while another game selected plays its own.
+for actions in ("SB", "B-BSB", "X-XSB"):
+    after = shot(actions, elapsed=60000)
+    assert cover_shown(after) and not fullscreen(after), actions
+assert fullscreen(shot("SBDD", elapsed=60000))
 # Any other key closes it and acts on the list: Down selects Beta, without a
 # video, and Down again Gamma, whose video plays; Up from there shows the list.
 beta = shot("D", elapsed=60000)

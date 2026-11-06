@@ -20,9 +20,10 @@ typedef struct {
     bool changed;       /* the frame, or whether there is one, changed */
     bool waiting;       /* the selection waits for start_at */
     Uint32 start_at;
-    bool fullscreen; /* over the whole screen, not the cover */
-    bool dismissed;  /* closed by a key: not again for this selection */
-    bool swallow;    /* B closed it: its repeats do nothing until released */
+    bool fullscreen;    /* over the whole screen, not the cover */
+    bool dismissed;     /* closed by a key: not again for this selection */
+    bool swallow;       /* B or unbound X closed it: repeat ignored until release */
+    SDLKey swallow_key; /* physical key which dismissed the fullscreen video */
 } MainUIListVideo;
 
 /* Play path (NULL for a game without a video: nothing plays) for the
@@ -36,8 +37,11 @@ bool mainui_list_video_fullscreen(const MainUIListVideo *preview);
 /* A key closed the video: it is not played again until another game is
  * selected, also after sleep. */
 void mainui_list_video_dismiss(MainUIListVideo *preview);
-/* The device sleeps: the video stops, and plays again on waking unless it
- * was dismissed. */
+/* Something covers or leaves the list, such as the context menu: the video
+ * stops, and plays again afterwards unless it was dismissed, a dismissal
+ * kept until another game is selected. */
+void mainui_list_video_hide(MainUIListVideo *preview);
+/* The device sleeps: as mainui_list_video_hide(). */
 void mainui_list_video_sleep(MainUIListVideo *preview);
 /* Take the frame due at now. A video that cannot play stops, showing the
  * cover again, and is not tried again for the same selection. */
