@@ -168,9 +168,11 @@ assert bytes_of(capture("RA", setting=CAROUSEL)) == bytes_of(capture("RA"))
 assert bytes_of(capture("B", setting=CAROUSEL)) == bytes_of(capture("B"))
 # Going in from the main menu shows the carousel too.
 assert bytes_of(capture("RE", start=None, setting=CAROUSEL)) == bytes_of(first)
-# R2/L2 move three positions, wrapping round, or stopping at the ends with
-# "wrap": false.
+# R1/L1 retain a grid page; R2/L2 move three positions, wrapping round, or
+# stopping at the ends with "wrap": false.
+assert colour_at(capture("2", setting=CAROUSEL), 320) == SELECTED[4]
 assert colour_at(capture("4", setting=CAROUSEL), 320) == SELECTED[3]
+assert colour_at(capture("1", setting=CAROUSEL), 320) == SELECTED[0]
 assert colour_at(capture("3", setting=WRAPS), 320) == SELECTED[2]
 assert colour_at(capture("3", setting=CAROUSEL), 320) == SELECTED[0]
 assert colour_at(capture("44", setting=CAROUSEL), 320) == SELECTED[4]

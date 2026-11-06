@@ -36,7 +36,7 @@ The Games grid shows 4 columns by 2 rows per page, the Expert grid 3 by 3.
 | --- | --- |
 | Right / Left | The next / previous console in reading order: along the row, then on to the start of the next row, then on to the next page. At the end of the list it wraps to the first console, and Left on the first console wraps to the last. |
 | Down / Up | The console below / above in the same column, also onto the next or previous page. It stops at the first and last console instead of wrapping; on a short last page it lands on the last console. |
-| R / L | The same position one page forward / back, stopping at the first and last console. |
+| R / L, R2 / L2 | The same position one page forward / back, stopping at the first and last console. Stock pages with R2 and L2 only. |
 
 **Differs from stock:** in stock MainUI, Right on the last console of the top row opens the next page at its top-left console. Here Right always takes the next console in order, which is the first console of the row below on the same page. Every console is then reached by pressing Right repeatedly, and the cursor never skips the rest of a page.
 
@@ -114,7 +114,7 @@ The name and number of games stay centred beneath the selected console while the
 The count is read from the cache only when a console is selected. The counter at the bottom right gives the console's position instead of the page.
 Right and Left move to the next and previous console, wrapping round at the ends as in the grid, or stopping there with `"wrap": false`.
 Right and Left move once per slide while slides are on, or every `repeat_ms` when that is longer, and every `repeat_ms` with slides off. The first press moves at once; a press made during a slide waits for it to end instead of being lost, and a held button's repeats leave nothing to catch up on once it is released.
-R2 and L2 move three consoles, wrapping round too or stopping at the ends, jumping there without a slide. Up and Down do nothing.
+R2 and L2 move three consoles, wrapping round too or stopping at the ends, and R and L as far as a grid page, both jumping there without a slide. Up and Down do nothing.
 
 The list shows the consoles as a game list does its games, with the theme's rows, row count (`.romListRows`), selection and font, and the theme's folder icon for each console. Names are shown without leading and trailing spaces, keeping the place those spaces sort them to.
 A selected name too long for its row scrolls as titles do in game lists (`.romListTitleScroll`). With `thumbs`, the selected console's thumbnail shows where a game's cover does, read and kept as covers are, unless `list.thumbs` is `false`.

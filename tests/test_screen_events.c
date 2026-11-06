@@ -776,6 +776,8 @@ static void carousel_shoulder_snap(MainUIApp *ui)
     ui->menu_view.carousel_snap = false; /* A draw consumes the one-shot flag. */
     assert(tap(ui, SDLK_RIGHT));
     assert(ui->view.selected == 3 && !ui->menu_view.carousel_snap);
+    assert(tap(ui, SDLK_PAGEDOWN));
+    assert(ui->view.selected != 3 && ui->menu_view.carousel_snap);
     free(ui->catalog);
     reset(ui);
 }

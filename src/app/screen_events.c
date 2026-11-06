@@ -1059,8 +1059,10 @@ bool mainui_screen_list_key(MainUIApp *ui, SDLKey key)
             int before = ui->view.selected;
             mainui_grid_move(&ui->view, (key == SDLK_RIGHT) - (key == SDLK_LEFT),
                              carousel ? 0 : (key == SDLK_DOWN) - (key == SDLK_UP),
-                             /* L2/R2, as stock (the carousel's are above). */
-                             (key == SDLK_BACKSPACE) - (key == SDLK_TAB),
+                             /* L2/R2, as stock, and L1/R1 too (the carousel's L2/R2
+                              * are above). */
+                             (key == SDLK_BACKSPACE || key == SDLK_PAGEDOWN) -
+                                 (key == SDLK_TAB || key == SDLK_PAGEUP),
                              ui->catalog == ui->expert ? 3 : 4, ui->catalog == ui->expert ? 3 : 2);
             if (carousel && (key == SDLK_PAGEUP || key == SDLK_PAGEDOWN) &&
                 ui->view.selected != before) {
