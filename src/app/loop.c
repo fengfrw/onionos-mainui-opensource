@@ -425,6 +425,12 @@ int mainui_wait_interval(const MainUIApp *ui, Uint32 now)
             interval = (int)until;
         }
     }
+    /* A playing video wakes when its next decoded frame is due; the decoder
+     * posts an event for a frame decoded later. */
+    int due = mainui_media_due(&ui->details.media, now);
+    if (due >= 0 && due < interval) {
+        interval = due > 0 ? due : 1;
+    }
     if (ui->catalog_job.thread) {
         Uint32 elapsed = now - ui->catalog_job.started_at;
         if (elapsed < 500 && (Uint32)interval > 500 - elapsed) {

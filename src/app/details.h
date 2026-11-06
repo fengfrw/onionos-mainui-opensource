@@ -2,6 +2,7 @@
 #ifndef MAINUI_DETAILS_H
 #define MAINUI_DETAILS_H
 #include "catalog/gamelist.h"
+#include "ui/media_viewer.h"
 #include "ui/preview.h"
 
 /* Owns copied text and metadata; borrows the list preview and source models.
@@ -16,6 +17,10 @@ typedef struct {
     MainUICatalog *catalog;
     const MainUILibrary *library;
     int index;
+    /* For the media gallery: the ROM on this SD and its console's ROM folder
+     * ("" when the console is not known). */
+    char host_rom[MAINUI_PATH_MAX], rom_root[MAINUI_PATH_MAX];
+    MainUIMediaViewer media;
 } MainUIDetails;
 
 bool mainui_details_open(MainUIDetails *details, MainUICatalog *catalog,
@@ -33,5 +38,9 @@ void mainui_details_progress(MainUIDetails *details, Uint32 wait_ms);
 /* The Favorite markers were reloaded: update the shown star. */
 void mainui_details_markers(MainUIDetails *details, const MainUILibrary *favorites);
 void mainui_details_draw(MainUIDetails *details, MainUITheme *theme, SDL_Surface *screen);
+/* Right opens the game's media gallery when it has any (see media_viewer.h);
+ * else it does nothing. */
+void mainui_details_media(MainUIDetails *details, const char *sd, SDL_Surface *screen);
+/* Also closes the gallery, stopping any video. */
 void mainui_details_close(MainUIDetails *details);
 #endif

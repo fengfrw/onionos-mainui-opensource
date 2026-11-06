@@ -41,7 +41,7 @@ CFLAGS     += $(STD) $(WARN) $(OPT) $(SDL_CFLAGS) -MMD -MP
 # overridden: a command-line override would discard this whole line, SDL
 # included, and every SDL symbol would come out undefined at link time.
 EXTRA_LIBS ?= -lsqlite3
-LDLIBS     += $(SDL_LIBS) $(EXTRA_LIBS) -pthread -lm
+LDLIBS     += $(SDL_LIBS) $(EXTRA_LIBS) -pthread -lm -ldl
 
 # ---------------------------------------------------------------- sources
 
@@ -62,7 +62,7 @@ UNIT_OBJ   := $(UNIT_SRC:%.c=$(O)/obj/%.o)
 # Harnesses driven by tests/integration/*.py, which build an SD tree first and
 # pass its path in. One binary each; add a name and the file is picked up.
 FIXTURES   := allocation_bounds artwork boundaries cache catalog catalog_job desktop device \
-              dialogs favorite_edit frame language library recent sources stock_settings
+              dialogs favorite_edit frame language library recent sources stock_settings video
 FIXTURE_BIN := $(FIXTURES:%=$(O)/fixture-%)
 
 HOST_BIN   := $(O)/MainUI-dev $(O)/unit-tests $(O)/core-probe \
@@ -93,7 +93,8 @@ check: check-unit check-integration
 check-unit: $(O)/unit-tests
 	$(O)/unit-tests
 
-check-integration: $(HOST_BIN) $(O)/no-hardlinks.so $(O)/sqlite-ioerr.so $(O)/read-fault.so
+check-integration: $(HOST_BIN) $(O)/no-hardlinks.so $(O)/sqlite-ioerr.so $(O)/read-fault.so \
+                   $(O)/ffstub.so $(O)/ffstub-noscale.so
 	ONION_ROOT='$(ONION_ROOT)' $(PYTHON) tests/integration/run.py --build-dir $(O)
 
 format:
@@ -224,6 +225,16 @@ $(O)/no-hardlinks.so: tests/no_hardlinks.c
 $(O)/sqlite-ioerr.so: tests/sqlite_ioerr.c
 	@mkdir -p $(@D)
 	$(CC) $(STD) $(WARN) -shared -fPIC $< -o $@ -ldl
+
+# Stand-ins for Onion's FFmpeg 2.4 libraries, for the media gallery's video
+# cases, which put them on LD_LIBRARY_PATH under FFmpeg's sonames.
+$(O)/ffstub.so: tests/ffmpeg_stub.c src/platform/ffmpeg_abi.h
+	@mkdir -p $(@D)
+	$(CC) $(STD) $(WARN) -Isrc -shared -fPIC $< -o $@
+
+$(O)/ffstub-noscale.so: tests/ffmpeg_stub.c src/platform/ffmpeg_abi.h
+	@mkdir -p $(@D)
+	$(CC) $(STD) $(WARN) -Isrc -DSTUB_WITHOUT_SCALE -shared -fPIC $< -o $@
 
 $(O)/read-fault.so: tests/read_fault.c
 	@mkdir -p $(@D)

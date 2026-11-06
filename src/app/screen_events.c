@@ -1111,8 +1111,8 @@ static bool game_list_open(const MainUIApp *ui)
 /* Game Info with nothing over it. */
 static bool game_info_open(const MainUIApp *ui)
 {
-    return ui->details.open && !*ui->message_title && !ui->name_input.open && !ui->context_open &&
-           ui->confirmation < 0;
+    return ui->details.open && !ui->details.media.open && !*ui->message_title &&
+           !ui->name_input.open && !ui->context_open && ui->confirmation < 0;
 }
 
 /* The selected row is a game, not a folder or "..". */
@@ -1283,6 +1283,15 @@ static void dispatch_key(MainUIApp *ui, SDL_Event *event)
     prepare_launch(ui);
     /* A message is drawn over Details, so it takes the keys first. */
     if (ui->details.open && screen_message_key(ui, key)) {
+        return;
+    }
+    /* The media gallery, over Game Info, takes every key. Right opens it. */
+    if (ui->details.open && ui->details.media.open) {
+        mainui_media_key(&ui->details.media, key, ui->screen);
+        return;
+    }
+    if (ui->details.open && key == SDLK_RIGHT) {
+        mainui_details_media(&ui->details, ui->sd, ui->screen);
         return;
     }
     if (ui->details.open && key == SDLK_RETURN && ui->handoff_dir) {

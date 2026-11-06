@@ -86,6 +86,37 @@ A menu shows the rows listed for its section, in that order, that the selection 
 A missing section keeps its default menu. Unknown and repeated IDs are skipped. A missing file gives the default menus, and so does a file that is not a JSON object, which the log notes once (`[menu] ... game-menu.json is not a JSON object`).
 The file is read when MainUI starts and never written. Confirmations still ask as before. The main menu's context menu (`main-menu.json`), Apps and the console grids are not affected.
 
+## Game Info's media gallery
+
+Right in Game Info opens a fullscreen gallery of the game's media, when it has any; otherwise Right does nothing there. Right shows the next item, and on the last one does nothing, and Left the previous one; Left on the first item goes back to Game Info, as B does from any item. Other buttons do nothing in the gallery, and the X and Y shortcuts do not act there.
+
+The media is in a `media` folder in the console's ROM folder, beside `Imgs`, under the ROM file's name without its extension (not the game's title). Every folder is optional. In this order:
+
+```text
+Roms/GB/
+├── Game.gb
+├── Imgs/
+│   └── Game.png              the list's and Game Info's cover, as before; not in the gallery
+└── media/
+    ├── box2dfront/Game.png   front cover
+    ├── box2dback/Game.png    back cover
+    ├── box3d/Game.png        3D box
+    ├── screenshot/
+    │   ├── Game.png
+    │   ├── Game-1.png
+    │   └── Game-2.png        and on, up to 20 screenshots
+    └── videos/Game.mp4       video
+```
+
+The folders are named as [Skraper](https://www.skraper.net/) names them by default, so the media it downloads can be copied to the SD card as it comes, its `media` folder beside the ROMs.
+Numbered screenshots stop at the first missing number from `-2` on: a missing `-1` does not end them, so screenshots numbered from `-2` show too.
+On the SD card's FAT the folder names match in any case; elsewhere they must be lowercase, as above. A game in a subfolder uses the same `media` folder, at the console's ROM folder. The console is found as for Game Info, so the gallery works from ROM lists, Favorites, Recents and Search results, also for consoles that share a ROM folder.
+Only these files are looked for, when the gallery opens; nothing is scanned.
+
+Images are scaled to fit the screen, keeping their shape, on black. A counter such as `2/5` shows at the bottom right when there is more than one item.
+Videos play without sound as soon as they are shown, and repeat. They use the FFmpeg libraries Onion already has for its video player, in `.tmp_update/lib/parasyte`, loaded from there only while a video plays, so MainUI starts without them.
+Without them, or for a file they cannot play, the gallery says so instead. H.264 MP4 files of about 320x240 at 15 to 30 frames per second suit the Miyoo Mini; videos over 1280x720 are not played.
+
 ## When a list changes
 
 Edits change the list under the window: Create, Rename, Sort, Delete, Move and Paste in Favorites, removing a Favorite or Recent, and deleting a ROM. After an edit:

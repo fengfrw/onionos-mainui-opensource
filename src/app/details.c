@@ -9,7 +9,15 @@
 
 void mainui_details_close(MainUIDetails *details)
 {
+    mainui_media_close(&details->media);
     *details = (MainUIDetails){0};
+}
+
+void mainui_details_media(MainUIDetails *details, const char *sd, SDL_Surface *screen)
+{
+    if (details->open) {
+        mainui_media_open(&details->media, details->rom_root, details->host_rom, sd, screen);
+    }
 }
 
 void mainui_details_progress(MainUIDetails *details, Uint32 wait_ms)
@@ -109,6 +117,8 @@ bool mainui_details_open(MainUIDetails *details, MainUICatalog *catalog,
         snprintf(details->system, sizeof details->system, "%s", source.label);
         root = source.rom_root;
     }
+    snprintf(details->host_rom, sizeof details->host_rom, "%s", host);
+    snprintf(details->rom_root, sizeof details->rom_root, "%s", root ? root : "");
     cJSON *record = library ? NULL : mainui_catalog_record(catalog, index);
     const cJSON *saved_rom = cJSON_GetObjectItemCaseSensitive(record, "rompath");
     snprintf(details->rom, sizeof details->rom, "%s",
