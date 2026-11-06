@@ -387,6 +387,11 @@ bool mainui_reap_jobs(MainUIApp *ui)
         }
         bool recovering = ui->page_recovery && (kind == JOB_RELOAD || kind == JOB_REPAIR_SYSTEM);
         if (recovering && result == JOB_CANCELLED) {
+            /* Once the worker is finished, a marker it never consumed cannot
+             * leak into a later visit to this console. */
+            if (ui->catalog && ui->catalog->depth > 0) {
+                mainui_catalog_cancel_scan_only(ui->catalog->pages[1].path);
+            }
             /* Back during recovery leaves the list instead of starting the
              * next step; it reopens at its top. */
             ui->page_recovery = 0;

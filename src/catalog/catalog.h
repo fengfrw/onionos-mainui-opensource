@@ -103,6 +103,8 @@ bool mainui_catalog_enter(MainUICatalog *catalog, int index);
  * last step of recovering a cache page that cannot be read. The entry after
  * that tries the cache again. False only when out of memory. */
 bool mainui_catalog_scan_only(const char *root);
+/* Remove an unconsumed scan-only marker after recovery fails or is cancelled. */
+void mainui_catalog_cancel_scan_only(const char *root);
 /* The same mark without a log line: a rebuilt catalog continuing a visit
  * that scans (a session snapshot with scan_visit) sets it before entering. */
 bool mainui_catalog_keep_scanning(const char *root);

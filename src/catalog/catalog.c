@@ -1383,6 +1383,13 @@ static bool take_scan_only(const char *root)
     return i >= 0;
 }
 
+void mainui_catalog_cancel_scan_only(const char *root)
+{
+    if (root && *root) {
+        (void)take_scan_only(root);
+    }
+}
+
 bool mainui_catalog_keep_scanning(const char *root)
 {
     pthread_mutex_lock(&scan_lock);

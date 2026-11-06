@@ -54,6 +54,10 @@ int main(int argc, char **argv)
     else if (!strcmp(argv[2], "scan-once")) {
         assert(p->cache && !strcmp(mainui_catalog_entry(c, 0)->label, "Cached"));
         assert(mainui_catalog_back(c) && mainui_catalog_scan_only(c->pages[0].entries[0].path));
+        /* A cancelled recovery must not force a later visit to scan. */
+        mainui_catalog_cancel_scan_only(c->pages[0].entries[0].path);
+        assert(mainui_catalog_enter(c, 0) && p->cache && !p->cache_fallback);
+        assert(mainui_catalog_back(c) && mainui_catalog_scan_only(c->pages[0].entries[0].path));
         assert(mainui_catalog_enter(c, 0) && !p->cache && p->cache_fallback);
         assert(!strcmp(mainui_catalog_entry(c, 0)->label, "fallback"));
         assert(mainui_catalog_back(c) && mainui_catalog_enter(c, 0));

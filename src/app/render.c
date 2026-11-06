@@ -866,6 +866,9 @@ static bool recover_page(MainUIApp *ui, const MainUILaunchSource *source)
             return false;
         }
     }
+    if (step == 3) {
+        mainui_catalog_cancel_scan_only(catalog->pages[1].path);
+    }
     ui->page_recovery = 0;
     /* Remembered at the top, so reopening the list starts on a readable page. */
     mainui_viewport_restore(&ui->view, ui->view.total, ui->config.rows, 0, 0, ui->config.rows - 1);
