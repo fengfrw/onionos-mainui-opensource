@@ -20,6 +20,10 @@ X acts as B (back, close, cancel) on every screen, as stock does; in the on-scre
 A main-menu tab Onion leaves in `/tmp/state.json` opens when MainUI starts, as with stock: at boot the startup tab set in Tweaks (Recents, Favorites, Games, Expert or Apps), and Expert for Onion's Expert app (Expert in Apps, or Expert set as the X or Y shortcut in Tweaks), also after a return from Apps, where MainUI would otherwise reopen Apps.
 A tab opens also when it is hidden on the main menu, and B goes back to the main menu with that tab selected. As stock does, MainUI removes `state.json` once it has read it, so a later start without a new one, such as after keymon's GameSwitcher, is on the main menu; stock opens the main menu there too.
 
+Games and Expert each open on the console last selected in them, also after MainUI was started again, such as after keymon's GameSwitcher.
+MainUI keeps both in `/tmp/console-position.json`, by the console's config file (its folder without one), written as soon as the selection changes, so it is lost only when the device is turned off.
+A return after a launch or from Search opens what it names instead, and a console that is gone gives the first one. The console's ROM list is not opened again.
+
 On a launch, MainUI writes `state.json` with the main menu and the open tab only, which is what Onion's scripts read from it (Game List Options and Random Game take the tab). Stock writes every open screen, down to the ROM folder. MainUI comes back to that folder, with each parent folder's selection, from its own return file (`mainui-return.json`), written at the same moment.
 
 A game is launched with `LD_PRELOAD=/mnt/SDCARD/miyoo/app/../lib/libpadsp.so "<launch script>" "<ROM>"`, the command Onion's own launchers write too (GameSwitcher, Random Game, the start after boot and runtime.sh's own rewrite).

@@ -215,6 +215,27 @@ static void update_list_video(MainUIApp *ui)
     free(paths);
 }
 
+/* Saves the console selected in Games or Expert as soon as it changes, so a
+ * MainUI started again opens there (console_position.h). */
+static void remember_console(MainUIApp *ui)
+{
+    int position = ui->catalog == ui->games    ? MAINUI_POSITION_GAMES
+                   : ui->catalog == ui->expert ? MAINUI_POSITION_EXPERT
+                                               : -1;
+    const MainUICatalogPage *page = &ui->catalog->pages[0];
+    if (position < 0 || ui->catalog->depth || !ui->handoff_dir || !page->entries ||
+        ui->view.selected < 0 || ui->view.selected >= page->count) {
+        return;
+    }
+    const char *identity = mainui_console_position_identity(&page->entries[ui->view.selected]);
+    char *remembered = ui->console_position.console[position];
+    ui->console_position_pending[position] = false;
+    if (identity && strcmp(identity, remembered) && strlen(identity) < 4096) {
+        strcpy(remembered, identity);
+        mainui_console_position_save(&ui->console_position, ui->handoff_dir);
+    }
+}
+
 void mainui_prepare_frame(MainUIApp *ui)
 {
     Uint32 now = SDL_GetTicks();
@@ -235,6 +256,7 @@ void mainui_prepare_frame(MainUIApp *ui)
         else if (ui->catalog == ui->expert) {
             ui->expert_view = ui->view;
         }
+        remember_console(ui);
     }
     ui->list_labels = (MainUIListLabels){ui->catalog, ui->library, ui->list};
     int destination;

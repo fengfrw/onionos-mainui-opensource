@@ -325,9 +325,18 @@ bool mainui_reap_jobs(MainUIApp *ui)
                  * console that was selected before, wherever it is now. Its
                  * config file names it: two emulators can share a ROM folder. */
                 char previous[MAINUI_PATH_MAX] = "";
-                if (kind == JOB_DISCOVER && *target && saved->selected >= 0 &&
-                    saved->selected < (*target)->pages[0].count &&
-                    (*target)->pages[0].entries[saved->selected].config) {
+                /* First opened since MainUI started: the console remembered
+                 * from before, or the first if it is gone. */
+                int position = expert ? MAINUI_POSITION_EXPERT : MAINUI_POSITION_GAMES;
+                bool remembered = kind == JOB_DISCOVER && ui->console_position_pending[position];
+                if (remembered) {
+                    snprintf(previous, sizeof previous, "%s",
+                             ui->console_position.console[position]);
+                    ui->console_position_pending[position] = false;
+                }
+                else if (kind == JOB_DISCOVER && *target && saved->selected >= 0 &&
+                         saved->selected < (*target)->pages[0].count &&
+                         (*target)->pages[0].entries[saved->selected].config) {
                     snprintf(previous, sizeof previous, "%s",
                              (*target)->pages[0].entries[saved->selected].config);
                 }
@@ -339,11 +348,14 @@ bool mainui_reap_jobs(MainUIApp *ui)
                 ui->catalog = completed.catalog;
                 ui->view = completed.view;
                 if (kind == JOB_DISCOVER && ui->catalog->pages[0].count) {
-                    int row = saved->selected < ui->catalog->pages[0].count
+                    int row = remembered ? 0
+                              : saved->selected < ui->catalog->pages[0].count
                                   ? saved->selected
                                   : ui->catalog->pages[0].count - 1;
                     for (int i = 0; *previous && i < ui->catalog->pages[0].count; i++) {
-                        const char *config = ui->catalog->pages[0].entries[i].config;
+                        const MainUIEntry *entry = &ui->catalog->pages[0].entries[i];
+                        const char *config =
+                            remembered ? mainui_console_position_identity(entry) : entry->config;
                         if (config && !strcmp(config, previous)) {
                             row = i;
                             break;

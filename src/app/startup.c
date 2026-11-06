@@ -511,6 +511,8 @@ static bool follow_search_setstate(MainUIApp *ui, const cJSON *record, int type,
     else {
         ui->games_view = view;
     }
+    ui->console_position_pending[type == 17 ? MAINUI_POSITION_EXPERT : MAINUI_POSITION_GAMES] =
+        false;
     ui->view = view;
     ui->home = ui->settings_open = false;
     ui->cached_start = -1;
@@ -550,6 +552,10 @@ void mainui_restore_session(MainUIApp *ui)
     ui->games_view = ui->view;
     ui->expert_view = (MainUIViewport){0};
     ui->apps_view = (MainUIViewport){0};
+    mainui_console_position_load(&ui->console_position, ui->handoff_dir);
+    for (int i = 0; i < MAINUI_POSITION_SECTIONS; ++i) {
+        ui->console_position_pending[i] = *ui->console_position.console[i];
+    }
     memset(ui->saved_library_views, 0, sizeof ui->saved_library_views);
     memset(ui->message_title, 0, sizeof ui->message_title);
     memset(ui->message_body, 0, sizeof ui->message_body);
@@ -648,12 +654,14 @@ void mainui_restore_session(MainUIApp *ui)
                 if (restored.section == MAINUI_MENU_EXPERT) {
                     ui->expert = restored.catalog;
                     ui->expert_view = restored.view;
+                    ui->console_position_pending[MAINUI_POSITION_EXPERT] = false;
                 }
                 else {
                     mainui_catalog_close(ui->games);
                     free(ui->games);
                     ui->games = restored.catalog;
                     ui->games_view = restored.view;
+                    ui->console_position_pending[MAINUI_POSITION_GAMES] = false;
                 }
                 ui->catalog = restored.catalog;
                 restored.catalog = NULL;
@@ -724,6 +732,7 @@ void mainui_restore_session(MainUIApp *ui)
                         }
                         ui->catalog = ui->games;
                         ui->view = ui->games_view = target;
+                        ui->console_position_pending[MAINUI_POSITION_GAMES] = false;
                         ui->home = ui->settings_open = false;
                     }
                     else {

@@ -2,6 +2,7 @@
 #ifndef MAINUI_APP_CONTEXT_H
 #define MAINUI_APP_CONTEXT_H
 #include "app/catalog_job.h"
+#include "app/console_position.h"
 #include "app/details.h"
 #include "app/device_job.h"
 #include "app/settings_page.h"
@@ -140,6 +141,11 @@ typedef struct {
     MainUIViewport games_view;
     MainUIViewport expert_view;
     MainUIViewport apps_view;
+    /* The console last selected in Games and Expert, saved whenever it
+     * changes. Until a section is opened, or a returned session or Search
+     * picks its console, opening it selects the remembered one (pending). */
+    MainUIConsolePosition console_position;
+    bool console_position_pending[MAINUI_POSITION_SECTIONS];
     MainUIViewport saved_library_views[2];
     char message_title[256];
     char message_body[256];
