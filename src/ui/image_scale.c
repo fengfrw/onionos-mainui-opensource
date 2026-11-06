@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 #include "ui/image_scale.h"
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -44,7 +45,29 @@ static SourceSample bilinear_sample(int position, int source_size, int target_si
     return (SourceSample){first, first + 1, (unsigned)(coordinate % 256)};
 }
 
-SDL_Surface *mainui_image_bilinear_copy(SDL_Surface *image, int w, int h)
+/* Area-average enlargement along one axis: the source pixels an output
+ * pixel covers, by how much. Enlarged, it covers at most two, so most
+ * output pixels take one source pixel's exact colour and only those across
+ * a source pixel's edge mix the two: crisp pixels with blended edges. */
+static SourceSample area_sample(int position, int source_size, int target_size)
+{
+    /* In units of 1/target_size source pixels. */
+    int64_t start = (int64_t)position * source_size, end = start + source_size;
+    int first = (int)(start / target_size);
+    int64_t edge = (int64_t)(first + 1) * target_size;
+    if (end <= edge || first + 1 >= source_size) {
+        return (SourceSample){first, first, 0};
+    }
+    unsigned fraction = (unsigned)(((end - edge) * 256 + source_size / 2) / source_size);
+    if (fraction >= 256) {
+        return (SourceSample){first + 1, first + 1, 0};
+    }
+    return (SourceSample){first, first + 1, fraction};
+}
+
+/* Interpolates between the two source pixels per axis that sample gives,
+ * weighting by alpha. */
+static SDL_Surface *resample(SDL_Surface *image, int w, int h, bool area_x, bool area_y)
 {
     if (!image || !image->format || image->format->BytesPerPixel != 4 || w < 1 || h < 1 ||
         (size_t)w > SIZE_MAX / sizeof(SourceSample)) {
@@ -60,7 +83,7 @@ SDL_Surface *mainui_image_bilinear_copy(SDL_Surface *image, int w, int h)
         return NULL;
     }
     for (int x = 0; x < w; x++) {
-        xs[x] = bilinear_sample(x, image->w, w);
+        xs[x] = area_x ? area_sample(x, image->w, w) : bilinear_sample(x, image->w, w);
     }
     if (SDL_LockSurface(image)) {
         SDL_FreeSurface(out);
@@ -69,7 +92,7 @@ SDL_Surface *mainui_image_bilinear_copy(SDL_Surface *image, int w, int h)
     }
     const int alpha = image->format->Amask ? image->format->Ashift / 8 : -1;
     for (int y = 0; y < h; y++) {
-        SourceSample sy = bilinear_sample(y, image->h, h);
+        SourceSample sy = area_y ? area_sample(y, image->h, h) : bilinear_sample(y, image->h, h);
         const Uint8 *row0 = (const Uint8 *)image->pixels + sy.first * image->pitch;
         const Uint8 *row1 = (const Uint8 *)image->pixels + sy.last * image->pitch;
         Uint8 *target = (Uint8 *)out->pixels + y * out->pitch;
@@ -107,6 +130,19 @@ SDL_Surface *mainui_image_bilinear_copy(SDL_Surface *image, int w, int h)
     free(xs);
     copy_flags(image, out);
     return out;
+}
+
+SDL_Surface *mainui_image_bilinear_copy(SDL_Surface *image, int w, int h)
+{
+    return resample(image, w, h, false, false);
+}
+
+SDL_Surface *mainui_image_framed_copy(SDL_Surface *image, int w, int h)
+{
+    if (!image) {
+        return NULL;
+    }
+    return resample(image, w, h, w >= image->w, h >= image->h);
 }
 
 /* Fit within a maximum rectangle without enlargement, the aspect ratio

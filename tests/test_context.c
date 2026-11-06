@@ -3,6 +3,7 @@
 #include "menus/context.h"
 #include "menus/favorite_context.h"
 #include "menus/game_menu.h"
+#include "platform/save_states.h"
 #include <limits.h>
 #include <stdlib.h>
 #ifdef NDEBUG
@@ -320,6 +321,94 @@ static void game_menus(void)
     actions_are(&context, rom, 5);
     mainui_game_menu_apply(&context, NULL, MAINUI_GAME_MENU_ROMS);
     actions_are(&context, rom, 5);
+    /* Game Info's media menu ("details"): every row by default, Saved Games
+     * with the rolling backup; an explicit list orders and hides them, once
+     * each, unknown IDs skipped; anything but an array keeps the default. */
+    mainui_game_menu_defaults(&menu);
+    assert(menu.details_count == MAINUI_DETAILS_ROWS &&
+           menu.details[2] == MAINUI_DETAILS_SAVED_GAMES);
+    assert(menu.resume_mode == MAINUI_RESUME_BACKUP && !menu.saves_left && menu.saves_upscale &&
+           !menu.saves_auto && menu.saves_correct_aspect && menu.gallery_right);
+    assert(mainui_game_menu_details(&menu, MAINUI_DETAILS_SAVED_GAMES));
+    assert(mainui_game_menu_parse(&menu, "{\"details\": [\"maps\", \"nope\", \"gallery\", "
+                                         "\"maps\"], \"saved_games\": {\"resume_mode\": "
+                                         "\"swap\"}}"));
+    assert(menu.details_count == 2 && menu.details[0] == MAINUI_DETAILS_MAPS &&
+           menu.details[1] == MAINUI_DETAILS_GALLERY);
+    assert(!mainui_game_menu_details(&menu, MAINUI_DETAILS_SAVED_GAMES));
+    assert(menu.resume_mode == MAINUI_RESUME_SWAP);
+    assert(mainui_game_menu_parse(&menu, "{\"details\": \"saved_games\", \"saved_games\": "
+                                         "{\"resume_mode\": \"overwrite\"}}"));
+    assert(menu.details_count == MAINUI_DETAILS_ROWS &&
+           menu.resume_mode == MAINUI_RESUME_OVERWRITE);
+    assert(mainui_game_menu_parse(&menu, "{\"saved_games\": {\"resume_mode\": \"Swap\"}}"));
+    assert(menu.resume_mode == MAINUI_RESUME_BACKUP && !menu.saves_left);
+    /* left_shortcut: only true turns Left's Saved Games on; upscale_preview
+     * only false turns enlarging off. */
+    assert(mainui_game_menu_parse(&menu, "{\"saved_games\": {\"left_shortcut\": true, "
+                                         "\"upscale_preview\": false}}"));
+    assert(menu.saves_left && !menu.saves_upscale && menu.resume_mode == MAINUI_RESUME_BACKUP);
+    assert(mainui_game_menu_parse(&menu, "{\"saved_games\": {\"left_shortcut\": 1, "
+                                         "\"upscale_preview\": 0}}"));
+    assert(!menu.saves_left && menu.saves_upscale);
+    /* correct_aspect_ratio is on by default; only false turns it off. */
+    assert(mainui_game_menu_parse(&menu, "{\"saved_games\": {\"correct_aspect_ratio\": false}}"));
+    assert(!menu.saves_correct_aspect && menu.saves_upscale);
+    assert(mainui_game_menu_parse(&menu, "{\"saved_games\": {\"correct_aspect_ratio\": 0}}"));
+    assert(menu.saves_correct_aspect);
+    assert(mainui_game_menu_parse(&menu, "{\"saved_games\": {\"correct_aspect_ratio\": true}}"));
+    assert(menu.saves_correct_aspect);
+    /* disabled_rom_dirs: ARCADE unless given; a list replaces it, [] none;
+     * entries that are no folder names, or repeat one, are skipped. */
+    assert(mainui_game_menu_parse(&menu, "{}"));
+    assert(menu.saves_disabled_count == 1 &&
+           mainui_game_menu_saves_disabled(&menu, "/mnt/SDCARD/Roms/ARCADE") &&
+           mainui_game_menu_saves_disabled(&menu, "/mnt/SDCARD/Roms/arcade/") &&
+           !mainui_game_menu_saves_disabled(&menu, "/mnt/SDCARD/Roms/FBNEO") &&
+           !mainui_game_menu_saves_disabled(&menu, "/mnt/SDCARD/Roms/ARCADE2"));
+    assert(mainui_game_menu_parse(
+        &menu, "{\"saved_games\": {\"disabled_rom_dirs\": [\"MAME\", \"scummvm\", \"mame\", "
+               "\"\", 3, \"a/b\", \"..\", \"My Console\"]}}"));
+    assert(menu.saves_disabled_count == 3 &&
+           mainui_game_menu_saves_disabled(&menu, "/mnt/SDCARD/Roms/MAME") &&
+           mainui_game_menu_saves_disabled(&menu, "/mnt/SDCARD/Roms/SCUMMVM") &&
+           mainui_game_menu_saves_disabled(&menu, "/mnt/SDCARD/Roms/My Console") &&
+           !mainui_game_menu_saves_disabled(&menu, "/mnt/SDCARD/Roms/ARCADE"));
+    assert(mainui_game_menu_parse(&menu, "{\"saved_games\": {\"disabled_rom_dirs\": []}}"));
+    assert(!menu.saves_disabled_count &&
+           !mainui_game_menu_saves_disabled(&menu, "/mnt/SDCARD/Roms/ARCADE"));
+    assert(mainui_game_menu_parse(&menu, "{\"saved_games\": {\"disabled_rom_dirs\": \"MAME\"}}"));
+    assert(menu.saves_disabled_count == 1 && !strcmp(menu.saves_disabled[0], "ARCADE"));
+    /* layout: framed unless "overlay". */
+    assert(menu.saves_framed);
+    assert(mainui_game_menu_parse(&menu, "{\"saved_games\": {\"layout\": \"overlay\"}}"));
+    assert(!menu.saves_framed);
+    assert(mainui_game_menu_parse(&menu, "{\"saved_games\": {\"layout\": \"Overlay\"}}"));
+    assert(menu.saves_framed);
+    assert(mainui_game_menu_parse(&menu, "{\"saved_games\": {\"layout\": \"framed\"}}"));
+    assert(menu.saves_framed);
+    /* show_auto: only true lists Auto Save. */
+    assert(mainui_game_menu_parse(&menu, "{\"saved_games\": {\"show_auto\": true}}"));
+    assert(menu.saves_auto);
+    assert(mainui_game_menu_parse(&menu, "{\"saved_games\": {\"show_auto\": \"yes\"}}"));
+    assert(!menu.saves_auto);
+    /* Only a JSON boolean changes the default-on Gallery shortcut. */
+    assert(mainui_game_menu_parse(&menu, "{\"gallery\": {\"right_shortcut\": false}}"));
+    assert(!menu.gallery_right);
+    assert(mainui_game_menu_parse(&menu, "{\"gallery\": {\"right_shortcut\": true}}"));
+    assert(menu.gallery_right);
+    assert(mainui_game_menu_parse(&menu, "{\"gallery\": {\"right_shortcut\": 0}}"));
+    assert(menu.gallery_right);
+    assert(mainui_game_menu_parse(&menu, "{\"gallery\": {\"right_shortcut\": \"false\"}}"));
+    assert(menu.gallery_right);
+    /* upscale_images is on unless the JSON false. */
+    assert(menu.gallery_upscale);
+    assert(mainui_game_menu_parse(&menu, "{\"gallery\": {\"upscale_images\": false}}"));
+    assert(!menu.gallery_upscale && menu.gallery_right);
+    assert(mainui_game_menu_parse(&menu, "{\"gallery\": {\"upscale_images\": 0}}"));
+    assert(menu.gallery_upscale);
+    assert(mainui_game_menu_parse(&menu, "{\"details\": []}") && !menu.details_count);
+    assert(!mainui_game_menu_parse(&menu, "[]") && menu.details_count == MAINUI_DETAILS_ROWS);
 }
 
 int mainui_suite_context(void)

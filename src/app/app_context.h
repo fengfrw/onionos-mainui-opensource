@@ -128,6 +128,9 @@ typedef struct {
     bool timer_failure_logged;
     bool search_keyboard;
     bool media_keyboard; /* the keyboard searches Game Info's walkthrough */
+    /* Left in a game list reset a scrolling title: the next Left on the same
+     * game opens Saved Games. Any other key ends it. */
+    bool saves_left_armed;
     bool wifi_was_visible;
     /* A connection was made to wifi_join_ssid: if it is not joined by
      * wifi_join_until, the Wi-Fi page says so, until it is. Joined counts

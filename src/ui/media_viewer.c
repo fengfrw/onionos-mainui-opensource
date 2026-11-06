@@ -4,6 +4,7 @@
 #include "platform/audio.h"
 #include "ui/artwork.h"
 #include "ui/drawing.h"
+#include "ui/image_scale.h"
 #include "ui/panels.h"
 #include <ctype.h>
 #include <dirent.h>
@@ -149,39 +150,61 @@ enum {
     MEDIA_GALLERY,
     MEDIA_MENU,
     MEDIA_MAPS,
-    MEDIA_TEXT
+    MEDIA_TEXT,
+    MEDIA_SAVES
 };
 
+/* The menu's rows, as game-menu.json's "details" names them. */
 enum {
-    MENU_INFO,
-    MENU_ARTWORK,
-    MENU_MAPS,
-    MENU_TEXT,
-    MENU_PDF
+    MENU_INFO = MAINUI_DETAILS_GAME_INFO,
+    MENU_ARTWORK = MAINUI_DETAILS_GALLERY,
+    MENU_SAVES = MAINUI_DETAILS_SAVED_GAMES,
+    MENU_MAPS = MAINUI_DETAILS_MAPS,
+    MENU_TEXT = MAINUI_DETAILS_WALKTHROUGH,
+    MENU_PDF = MAINUI_DETAILS_MANUAL
 };
 
-/* The menu's rows: every view the game has, Game Info always, but never the
- * one the menu was opened from: Game Info from Game Info, Gallery from the
- * gallery, and so on. */
+/* The menu's rows: every view the game has, in game-menu.json's order, Game
+ * Info always, but never the one the menu was opened from: Game Info from
+ * Game Info, Gallery from the gallery, and so on. */
 static bool menu_has(const MainUIMediaViewer *viewer, int type)
 {
-    static const int from[] = {MEDIA_RETURN_DETAILS, MEDIA_RETURN_GALLERY, MEDIA_RETURN_MAPS,
-                               MEDIA_RETURN_TEXT, -1};
+    static const int from[] = {MEDIA_RETURN_DETAILS, MEDIA_RETURN_GALLERY, MEDIA_RETURN_SAVES,
+                               MEDIA_RETURN_MAPS,    MEDIA_RETURN_TEXT,    -1};
     if (from[type] == viewer->menu_return) {
         return false;
     }
     return type == MENU_INFO      ? true
            : type == MENU_ARTWORK ? viewer->count > 0
+           : type == MENU_SAVES   ? viewer->saves && viewer->saves->count > 0
            : type == MENU_MAPS    ? viewer->map_count > 0
            : type == MENU_TEXT    ? *viewer->manual_path != 0
                                   : *viewer->pdf_path != 0;
 }
 
-static int menu_items(const MainUIMediaViewer *viewer)
+/* The rows' order: Game Info first unless the file places it, then the
+ * file's, or the default's. */
+static int menu_order(const MainUIMediaViewer *viewer, int out[MAINUI_DETAILS_ROWS])
 {
     int count = 0;
-    for (int type = MENU_INFO; type <= MENU_PDF; type++) {
-        count += menu_has(viewer, type);
+    bool info = false;
+    for (int i = 0; i < viewer->order_count; i++) {
+        info |= viewer->order[i] == MENU_INFO;
+    }
+    if (!info) {
+        out[count++] = MENU_INFO;
+    }
+    for (int i = 0; i < viewer->order_count && count < MAINUI_DETAILS_ROWS; i++) {
+        out[count++] = viewer->order[i];
+    }
+    return count;
+}
+
+static int menu_items(const MainUIMediaViewer *viewer)
+{
+    int order[MAINUI_DETAILS_ROWS], rows = menu_order(viewer, order), count = 0;
+    for (int i = 0; i < rows; i++) {
+        count += menu_has(viewer, order[i]);
     }
     return count;
 }
@@ -189,9 +212,10 @@ static int menu_items(const MainUIMediaViewer *viewer)
 /* Visible menu slot -> media category; there are no disabled/empty rows. */
 static int menu_type(const MainUIMediaViewer *viewer, int slot)
 {
-    for (int type = MENU_INFO; type <= MENU_PDF; type++) {
-        if (menu_has(viewer, type) && slot-- == 0) {
-            return type;
+    int order[MAINUI_DETAILS_ROWS], rows = menu_order(viewer, order);
+    for (int i = 0; i < rows; i++) {
+        if (menu_has(viewer, order[i]) && slot-- == 0) {
+            return order[i];
         }
     }
     return MENU_INFO;
@@ -214,9 +238,60 @@ static void release(MainUIMediaViewer *viewer)
     viewer->video_pending = false;
 }
 
-/* The image scaled to fit the screen, keeping its shape, on black, in the
- * screen's format: shown with one plain copy. */
-static SDL_Surface *fitted(const char *path, const SDL_Surface *screen)
+/* The screen shape of the console whose ROM folder is rom_root, by its name
+ * in any case, for a save's picture; 0:0, its own shape, for other folders. */
+static void save_display_aspect(const char *rom_root, int *width, int *height)
+{
+    *width = *height = 0;
+    if (!rom_root) {
+        return;
+    }
+    const char *end = rom_root + strlen(rom_root);
+    while (end > rom_root && end[-1] == '/') {
+        --end;
+    }
+    const char *name = end;
+    while (name > rom_root && name[-1] != '/') {
+        --name;
+    }
+    size_t len = (size_t)(end - name);
+#define SYSTEM_IS(s) (len == sizeof(s) - 1 && !strncasecmp(name, (s), sizeof(s) - 1))
+    if (SYSTEM_IS("FC") || SYSTEM_IS("NES") || SYSTEM_IS("FDS") || SYSTEM_IS("SFC") ||
+        SYSTEM_IS("SNES") || SYSTEM_IS("MD") || SYSTEM_IS("GEN") || SYSTEM_IS("GENESIS") ||
+        SYSTEM_IS("SMS") || SYSTEM_IS("MS") || SYSTEM_IS("PCE") || SYSTEM_IS("PCECD") ||
+        SYSTEM_IS("TG16") || SYSTEM_IS("PS") || SYSTEM_IS("PS1") || SYSTEM_IS("PSX") ||
+        /* RedOnion's other 4:3 home systems; not arcade, whose games turn
+         * either way, nor handhelds with other screens. */
+        SYSTEM_IS("NEOGEO") || SYSTEM_IS("NEOCD") || SYSTEM_IS("SEGACD") ||
+        SYSTEM_IS("THIRTYTWOX") || SYSTEM_IS("SEGASGONE") || SYSTEM_IS("SATURN") ||
+        SYSTEM_IS("ATARI") || SYSTEM_IS("FIFTYTWOHUNDRED") || SYSTEM_IS("SEVENTYEIGHTHUNDRED") ||
+        SYSTEM_IS("EIGHTHUNDRED") || SYSTEM_IS("ATARIST") || SYSTEM_IS("COLECO") ||
+        SYSTEM_IS("INTELLIVISION") || SYSTEM_IS("MSX") || SYSTEM_IS("AMIGA") ||
+        SYSTEM_IS("AMIGACD") || SYSTEM_IS("DOS") || SYSTEM_IS("ZXS") || SYSTEM_IS("COMMODORE") ||
+        SYSTEM_IS("CPC") || SYSTEM_IS("PANASONIC") || SYSTEM_IS("SGFX") ||
+        SYSTEM_IS("SATELLAVIEW") || SYSTEM_IS("FAIRCHILD") || SYSTEM_IS("ODYSSEY")) {
+        *width = 4;
+        *height = 3;
+    }
+    else if (SYSTEM_IS("GB") || SYSTEM_IS("GBC") || SYSTEM_IS("GG")) {
+        *width = 10;
+        *height = 9;
+    }
+    else if (SYSTEM_IS("GBA")) {
+        *width = 3;
+        *height = 2;
+    }
+#undef SYSTEM_IS
+}
+
+/* The image scaled to fit an area of area_width by area_height on black, in
+ * the screen's format, shown with one plain copy: in its own shape, or
+ * aspect_width:aspect_height when given (a save's picture in its console's
+ * shape). Without grow, it keeps its own height, its width put to the shape,
+ * unless it must shrink to fit. */
+static SDL_Surface *fitted(const char *path, const SDL_Surface *screen, int area_width,
+                           int area_height, bool grow, int aspect_width, int aspect_height,
+                           bool filter)
 {
     SDL_Surface *loaded = mainui_artwork_load(path);
     SDL_Surface *image = loaded ? mainui_artwork_software(loaded) : NULL;
@@ -226,20 +301,44 @@ static SDL_Surface *fitted(const char *path, const SDL_Surface *screen)
     if (!image) {
         return NULL;
     }
-    int width = screen->w, height = (int)((int64_t)image->h * screen->w / image->w);
-    if (height > screen->h) {
-        height = screen->h;
-        width = (int)((int64_t)image->w * screen->h / image->h);
+    int native_width =
+        aspect_width > 0 && aspect_height > 0
+            ? (int)(((int64_t)image->h * aspect_width + aspect_height / 2) / aspect_height)
+            : image->w;
+    int native_height = image->h;
+    if (native_width < 1) {
+        native_width = 1;
+    }
+    /* For no upscale, correct the pixel aspect without enlarging its height.
+     * For upscale, use the largest rectangle of this aspect on the screen. */
+    int width = grow ? area_width : native_width;
+    int height = grow ? (int)((int64_t)native_height * area_width / native_width) : native_height;
+    if (height > area_height) {
+        height = area_height;
+        width = (int)((int64_t)native_width * height / native_height);
+    }
+    if (width > area_width) {
+        width = area_width;
+        height = (int)((int64_t)native_height * width / native_width);
     }
     width = width < 1 ? 1 : width;
     height = height < 1 ? 1 : height;
-    SDL_Surface *scaled = SDL_CreateRGBSurface(
-        SDL_SWSURFACE, width, height, image->format->BitsPerPixel, image->format->Rmask,
-        image->format->Gmask, image->format->Bmask, image->format->Amask);
+    /* Only Saved Games in framed mode opts into filtering: area-average
+     * enlargement and alpha-aware bilinear reduction. Overlay, Gallery and
+     * Maps retain SDL scaling. */
+    SDL_Surface *scaled = filter && (width != image->w || height != image->h)
+                              ? mainui_image_framed_copy(image, width, height)
+                              : NULL;
+    bool filtered = scaled != NULL;
+    if (!scaled) {
+        scaled = SDL_CreateRGBSurface(SDL_SWSURFACE, width, height, image->format->BitsPerPixel,
+                                      image->format->Rmask, image->format->Gmask,
+                                      image->format->Bmask, image->format->Amask);
+    }
     SDL_Surface *result = SDL_CreateRGBSurface(SDL_SWSURFACE, width, height,
                                                screen->format->BitsPerPixel, screen->format->Rmask,
                                                screen->format->Gmask, screen->format->Bmask, 0);
-    bool ok = scaled && result && SDL_SoftStretch(image, NULL, scaled, NULL) == 0;
+    bool ok = scaled && result && (filtered || SDL_SoftStretch(image, NULL, scaled, NULL) == 0);
     if (ok) {
         SDL_FillRect(result, NULL, SDL_MapRGB(result->format, 0, 0, 0));
         mainui_artwork_blend(scaled);
@@ -290,7 +389,7 @@ static void show_map(MainUIMediaViewer *viewer, SDL_Surface *screen)
         }
     }
     else {
-        viewer->image = fitted(path, screen);
+        viewer->image = fitted(path, screen, screen->w, screen->h, true, 0, 0, false);
     }
     viewer->image_failed = !viewer->image;
     viewer->map_pan_x = viewer->map_pan_y = 0;
@@ -311,7 +410,8 @@ static void show(MainUIMediaViewer *viewer, SDL_Surface *screen)
         viewer->video_at = viewer->shown_at + MAINUI_MEDIA_VIDEO_DELAY_MS;
     }
     else {
-        viewer->image = fitted(item->path, screen);
+        viewer->image =
+            fitted(item->path, screen, screen->w, screen->h, viewer->gallery_upscale, 0, 0, false);
         viewer->image_failed = !viewer->image;
         if (viewer->image_failed) {
             fprintf(stderr, "[media] cannot show %.300s\n", item->path);
@@ -319,8 +419,56 @@ static void show(MainUIMediaViewer *viewer, SDL_Surface *screen)
     }
 }
 
+/* Framed, a save's picture is fitted between the 60 px header and a footer
+ * as tall: 640x360 at y 60 on the 640x480 screen. */
+#define SAVE_FRAME_TOP 60
+
+/* The chosen save's picture, read only while it is shown; none, or one that
+ * cannot be read, shows a placeholder. */
+static void show_save(MainUIMediaViewer *viewer, SDL_Surface *screen)
+{
+    release(viewer);
+    const MainUISave *save = &viewer->saves->saves[viewer->save_index];
+    if (save->shot) {
+        char path[4100];
+        snprintf(path, sizeof path, "%s.png", save->state);
+        int top = viewer->save_framed ? SAVE_FRAME_TOP : 0;
+        viewer->image =
+            fitted(path, screen, screen->w, screen->h - 2 * top, viewer->save_upscale,
+                   viewer->save_aspect_width, viewer->save_aspect_height, viewer->save_framed);
+    }
+    viewer->image_failed = !viewer->image;
+}
+
+void mainui_media_refresh_saves(MainUIMediaViewer *viewer, SDL_Surface *screen, bool previous)
+{
+    if (!viewer || !viewer->saves) {
+        return;
+    }
+    int slot = viewer->save_index >= 0 && viewer->save_index < viewer->saves->count
+                   ? viewer->saves->saves[viewer->save_index].slot
+                   : MAINUI_SAVES_AUTO;
+    int count = mainui_saves_list(viewer->saves, previous, viewer->save_auto);
+    if (!count) {
+        mainui_media_close(viewer);
+        return;
+    }
+    viewer->save_index = count - 1;
+    for (int i = 0; i < count; i++) {
+        if (viewer->saves->saves[i].slot == slot) {
+            viewer->save_index = i;
+            break;
+        }
+    }
+    if (viewer->mode == MEDIA_SAVES ||
+        (viewer->mode == MEDIA_MENU && viewer->menu_return == MEDIA_RETURN_SAVES)) {
+        show_save(viewer, screen);
+    }
+}
+
 static bool open_media(MainUIMediaViewer *viewer, const char *rom_root, const char *rom,
-                       const char *sd, SDL_Surface *screen, bool menu)
+                       const char *sd, SDL_Surface *screen, const MainUIMediaOptions *options,
+                       int start)
 {
     mainui_media_close(viewer);
     if (sd) {
@@ -340,10 +488,46 @@ static bool open_media(MainUIMediaViewer *viewer, const char *rom_root, const ch
     int map_count = maps ? mainui_maps_find(rom_root, rom, maps, MAINUI_MEDIA_MAPS_MAX) : 0;
     bool has_text = mainui_text_find(rom_root, rom, viewer->manual_path);
     bool has_pdf = mainui_manual_find(rom_root, rom, ".pdf", viewer->pdf_path);
-    /* Right opens the gallery only; Select opens the menu. */
-    if ((!count && !map_count && !has_text && !has_pdf) || (!menu && !count)) {
+    /* The game's save states, when game-menu.json lists Saved Games. */
+    viewer->save_upscale = !options || options->upscale;
+    viewer->save_framed = !options || options->framed;
+    viewer->gallery_upscale = !options || options->gallery_upscale;
+    viewer->save_auto = options && options->autosave;
+    if (options && options->correct_aspect) {
+        save_display_aspect(rom_root, &viewer->save_aspect_width, &viewer->save_aspect_height);
+    }
+    if (options) {
+        viewer->order_count = options->order_count;
+        memcpy(viewer->order, options->order, sizeof viewer->order);
+        bool listed = false;
+        for (int i = 0; i < options->order_count; i++) {
+            listed |= options->order[i] == MENU_SAVES;
+        }
+        /* None for a folder with Saved Games turned off: not looked for. */
+        viewer->saves = listed && options->launch &&
+                                !mainui_game_menu_saves_disabled(options->game_menu, rom_root)
+                            ? malloc(sizeof *viewer->saves)
+                            : NULL;
+        if (viewer->saves &&
+            (!mainui_saves_locate(viewer->saves, sd, options->launch, rom) ||
+             !mainui_saves_list(viewer->saves, options->previous, options->autosave))) {
+            free(viewer->saves);
+            viewer->saves = NULL;
+        }
+    }
+    else {
+        for (int i = 0; i < MAINUI_DETAILS_ROWS; i++) {
+            viewer->order[viewer->order_count++] = i;
+        }
+    }
+    /* Right opens the gallery only, Left Saved Games only. */
+    if ((!count && !map_count && !has_text && !has_pdf && !viewer->saves) ||
+        (start == MAINUI_MEDIA_START_GALLERY && !count) ||
+        (start == MAINUI_MEDIA_START_SAVES && !viewer->saves)) {
         free(maps);
         free(items);
+        free(viewer->saves);
+        viewer->saves = NULL;
         return false;
     }
     if (!count) {
@@ -359,26 +543,39 @@ static bool open_media(MainUIMediaViewer *viewer, const char *rom_root, const ch
     viewer->items = items;
     viewer->count = count;
     viewer->index = 0;
+    /* Saved Games start on the rightmost entry: Auto Save when shown, else
+     * the highest slot, or Previous Session alone. */
+    viewer->save_index = viewer->saves ? viewer->saves->count - 1 : 0;
+    viewer->held_left = start == MAINUI_MEDIA_START_SAVES;
     viewer->open = true;
-    viewer->mode = menu ? MEDIA_MENU : MEDIA_GALLERY;
+    /* Opened by Right or Left, Left or Right at the far end leaves again;
+     * opened from the menu, both ends stop. */
+    viewer->edge_exit = start != MAINUI_MEDIA_START_MENU;
+    viewer->mode = start == MAINUI_MEDIA_START_SAVES  ? MEDIA_SAVES
+                   : start == MAINUI_MEDIA_START_MENU ? MEDIA_MENU
+                                                      : MEDIA_GALLERY;
     viewer->menu_return = MEDIA_RETURN_DETAILS;
     viewer->menu_selection = 0;
+    /* A menu with no row, as game-menu.json's details can leave it, does
+     * not open: Select does nothing then. */
+    if (viewer->mode == MEDIA_MENU && !menu_items(viewer)) {
+        mainui_media_close(viewer);
+        return false;
+    }
     if (viewer->mode == MEDIA_GALLERY) {
         show(viewer, screen);
+    }
+    else if (viewer->mode == MEDIA_SAVES) {
+        show_save(viewer, screen);
     }
     return true;
 }
 
 bool mainui_media_open(MainUIMediaViewer *viewer, const char *rom_root, const char *rom,
-                       const char *sd, SDL_Surface *screen)
+                       const char *sd, SDL_Surface *screen, const MainUIMediaOptions *options,
+                       int start)
 {
-    return open_media(viewer, rom_root, rom, sd, screen, false);
-}
-
-bool mainui_media_open_menu(MainUIMediaViewer *viewer, const char *rom_root, const char *rom,
-                            const char *sd, SDL_Surface *screen)
-{
-    return open_media(viewer, rom_root, rom, sd, screen, true);
+    return open_media(viewer, rom_root, rom, sd, screen, options, start);
 }
 
 bool mainui_media_over_details(const MainUIMediaViewer *viewer)
@@ -425,6 +622,12 @@ static void menu_back(MainUIMediaViewer *viewer, SDL_Surface *screen)
     else if (back == MEDIA_RETURN_TEXT) {
         viewer->mode = MEDIA_TEXT;
     }
+    else if (back == MEDIA_RETURN_SAVES && viewer->saves) {
+        viewer->mode = MEDIA_SAVES;
+        if (!viewer->image) {
+            show_save(viewer, screen);
+        }
+    }
     else {
         mainui_media_close(viewer);
     }
@@ -436,6 +639,14 @@ static void leave_view(MainUIMediaViewer *viewer)
 {
     release(viewer);
     viewer->menu_paused = false;
+}
+
+void mainui_media_suspend_for_pdf(MainUIMediaViewer *viewer)
+{
+    if (viewer && viewer->open) {
+        release(viewer);
+        viewer->menu_paused = false;
+    }
 }
 
 void mainui_media_back_from_pdf(MainUIMediaViewer *viewer, SDL_Surface *screen)
@@ -467,20 +678,26 @@ void mainui_media_key(MainUIMediaViewer *viewer, SDLKey key, SDL_Surface *screen
         }
         else if (key == SDLK_UP || key == SDLK_DOWN) {
             int n = menu_items(viewer);
-            viewer->menu_selection = (viewer->menu_selection + (key == SDLK_UP ? n - 1 : 1)) % n;
+            if (n > 0) {
+                viewer->menu_selection =
+                    (viewer->menu_selection + (key == SDLK_UP ? n - 1 : 1)) % n;
+            }
         }
         else if (key == SDLK_RETURN) {
             int option = menu_type(viewer, viewer->menu_selection);
             if (option == MENU_INFO) {
+                viewer->from_list = viewer->edge_exit = false;
                 mainui_media_close(viewer);
             }
             else if (option == MENU_ARTWORK) {
+                viewer->from_list = viewer->edge_exit = false;
                 leave_view(viewer);
                 close_text(viewer);
                 viewer->menu_return = MEDIA_RETURN_GALLERY;
                 menu_back(viewer, screen);
             }
             else if (option == MENU_MAPS) {
+                viewer->from_list = viewer->edge_exit = false;
                 leave_view(viewer);
                 close_text(viewer);
                 viewer->map_index = 0;
@@ -488,13 +705,21 @@ void mainui_media_key(MainUIMediaViewer *viewer, SDLKey key, SDL_Surface *screen
                 viewer->menu_return = MEDIA_RETURN_MAPS;
                 menu_back(viewer, screen);
             }
-            else if (option == MENU_PDF) {
-                /* Green takes the screen and the sound: nothing may play. The
-                 * menu stays, over what it was opened from, for afterwards. */
+            else if (option == MENU_SAVES) {
+                viewer->from_list = viewer->edge_exit = false;
                 leave_view(viewer);
+                close_text(viewer);
+                viewer->save_index = viewer->saves->count - 1;
+                viewer->menu_return = MEDIA_RETURN_SAVES;
+                menu_back(viewer, screen);
+            }
+            else if (option == MENU_PDF) {
+                /* Keep the backdrop until Green has passed preflight. The
+                 * PDF launcher releases it only before handing SDL over. */
                 viewer->pdf_requested = true;
             }
             else {
+                viewer->from_list = viewer->edge_exit = false;
                 leave_view(viewer);
                 close_text(viewer);
                 viewer->text = calloc(1, sizeof *viewer->text);
@@ -510,6 +735,35 @@ void mainui_media_key(MainUIMediaViewer *viewer, SDLKey key, SDL_Surface *screen
     /* B in the gallery, a map or the walkthrough goes back to Game Info. */
     if (key == SDLK_ESCAPE) {
         mainui_media_close(viewer);
+        return;
+    }
+    /* Saved Games: Left and Right move between them; Left stops at the first,
+     * and Right leaves them from the last, as B does, when Left in a list
+     * opened them, a held key's repeats stopping there. A resumes the one
+     * shown (the application does it, resume_requested). */
+    if (viewer->mode == MEDIA_SAVES) {
+        /* The held Left that opened them from a list repeats on: its
+         * repeats do nothing, until another key or a new press. */
+        bool opening_left = viewer->held_left && key == SDLK_LEFT && viewer->key_held;
+        viewer->held_left = opening_left;
+        if (opening_left) {
+            return;
+        }
+        int count = viewer->saves->count;
+        int next = viewer->save_index + (key == SDLK_LEFT ? -1 : 1);
+        if (key == SDLK_RCTRL) {
+            menu_over(viewer, MEDIA_RETURN_SAVES);
+        }
+        else if ((key == SDLK_LEFT || key == SDLK_RIGHT) && next >= 0 && next < count) {
+            viewer->save_index = next;
+            show_save(viewer, screen);
+        }
+        else if (key == SDLK_RIGHT && viewer->edge_exit && !viewer->key_held) {
+            mainui_media_close(viewer);
+        }
+        else if (key == SDLK_RETURN) {
+            viewer->resume_requested = true;
+        }
         return;
     }
     if (viewer->mode == MEDIA_TEXT) {
@@ -592,11 +846,12 @@ void mainui_media_key(MainUIMediaViewer *viewer, SDLKey key, SDL_Surface *screen
         }
         menu_over(viewer, MEDIA_RETURN_GALLERY);
     }
-    /* Left from the first item goes back to Game Info, as B does. */
-    else if (key == SDLK_LEFT && viewer->index == 0) {
+    /* Left from the first item goes back to Game Info, as B does, when Right
+     * opened the gallery. */
+    else if (key == SDLK_LEFT && viewer->index == 0 && viewer->edge_exit) {
         mainui_media_close(viewer);
     }
-    else if (key == SDLK_LEFT) {
+    else if (key == SDLK_LEFT && viewer->index > 0) {
         viewer->index--;
         show(viewer, screen);
     }
@@ -615,8 +870,31 @@ void mainui_media_key(MainUIMediaViewer *viewer, SDLKey key, SDL_Surface *screen
     }
 }
 
-/* Light text on a black box, at x from the left or, negative, the right. */
-static void badge(SDL_Surface *screen, TTF_Font *font, const char *text, int x)
+/* How opaque the labels' black boxes over a picture or video are. */
+#define LABEL_ALPHA 160
+
+/* Black over rect, opaque at 255, else letting the picture show through. */
+static void black_box(SDL_Surface *screen, SDL_Rect rect, Uint8 alpha)
+{
+    SDL_Surface *box =
+        alpha == SDL_ALPHA_OPAQUE
+            ? NULL
+            : SDL_CreateRGBSurface(SDL_SWSURFACE, rect.w, rect.h, screen->format->BitsPerPixel,
+                                   screen->format->Rmask, screen->format->Gmask,
+                                   screen->format->Bmask, 0);
+    if (!box) {
+        SDL_FillRect(screen, &rect, SDL_MapRGB(screen->format, 0, 0, 0));
+        return;
+    }
+    SDL_FillRect(box, NULL, SDL_MapRGB(box->format, 0, 0, 0));
+    SDL_SetAlpha(box, SDL_SRCALPHA, alpha);
+    SDL_BlitSurface(box, NULL, screen, &rect);
+    SDL_FreeSurface(box);
+}
+
+/* Light text on a black box, at x from the left or, negative, the right,
+ * the box as opaque as alpha. */
+static void badge_over(SDL_Surface *screen, TTF_Font *font, const char *text, int x, Uint8 alpha)
 {
     int width = 0, height = font ? TTF_FontHeight(font) : 0;
     if (!font || TTF_SizeUTF8(font, text, &width, NULL) < 0) {
@@ -625,8 +903,13 @@ static void badge(SDL_Surface *screen, TTF_Font *font, const char *text, int x)
     SDL_Color white = {255, 255, 255, 0};
     SDL_Rect back = {(Sint16)(x >= 0 ? x : screen->w + x - width - 12),
                      (Sint16)(screen->h - height - 14), (Uint16)(width + 12), (Uint16)(height + 6)};
-    SDL_FillRect(screen, &back, SDL_MapRGB(screen->format, 0, 0, 0));
+    black_box(screen, back, alpha);
     mainui_label(screen, font, white, text, back.x + 6, back.y + 3);
+}
+
+static void badge(SDL_Surface *screen, TTF_Font *font, const char *text, int x)
+{
+    badge_over(screen, font, text, x, SDL_ALPHA_OPAQUE);
 }
 
 /* The pause sign, two white bars on a black box as tall as a badge, at the
@@ -636,7 +919,7 @@ static void pause_sign(SDL_Surface *screen, TTF_Font *font)
     int height = (font ? TTF_FontHeight(font) : 18) + 6;
     int bar = height / 5 > 3 ? height / 5 : 3, tall = height - 10;
     SDL_Rect back = {8, (Sint16)(screen->h - height - 8), (Uint16)(bar * 3 + 16), (Uint16)height};
-    SDL_FillRect(screen, &back, SDL_MapRGB(screen->format, 0, 0, 0));
+    black_box(screen, back, LABEL_ALPHA);
     Uint32 white = SDL_MapRGB(screen->format, 255, 255, 255);
     for (int i = 0; i < 2; i++) {
         SDL_Rect rect = {(Sint16)(back.x + 8 + i * bar * 2), (Sint16)(back.y + 5), (Uint16)bar,
@@ -658,12 +941,79 @@ static void centered(SDL_Surface *screen, TTF_Font *font, const char *text, int 
 static void draw_text(MainUIMediaViewer *viewer, MainUITheme *theme, SDL_Surface *screen);
 static void draw_map(MainUIMediaViewer *viewer, MainUITheme *theme, SDL_Surface *screen);
 
+/* A save: its picture, or a grey placeholder saying "No thumbnail" (ID 99),
+ * under the theme's title bar, framed above a footer of its own or over the
+ * whole screen, which slot it is at the bottom left (Auto
+ * Save for Auto, Previous Session for the backup) and where it is among them
+ * at the bottom right. */
+static void draw_save(MainUIMediaViewer *viewer, MainUITheme *theme, SDL_Surface *screen)
+{
+    const MainUISave *save = &viewer->saves->saves[viewer->save_index];
+    char slot[64];
+    snprintf(slot, sizeof slot, "#%d", save->slot);
+    const char *name = slot;
+    if (save->slot == MAINUI_SAVES_AUTO) {
+        name = mainui_translate(418, "Auto Save");
+    }
+    else if (save->slot == MAINUI_SAVES_PREVIOUS) {
+        name = mainui_translate(417, "Previous Session");
+    }
+    /* Framed: the theme's background round the picture, which is centred
+     * between the header and the footer; else over the whole screen. */
+    int top = viewer->save_framed ? SAVE_FRAME_TOP : 0;
+    int area = screen->h - 2 * top;
+    if (viewer->save_framed && theme->background) {
+        mainui_blit(screen, theme->background, 0, 0);
+    }
+    if (viewer->image) {
+        mainui_blit(screen, viewer->image, (screen->w - viewer->image->w) / 2,
+                    top + (area - viewer->image->h) / 2);
+    }
+    else {
+        SDL_Rect box = {(Sint16)(screen->w / 4), (Sint16)(top + area / 4), (Uint16)(screen->w / 2),
+                        (Uint16)(area / 2)};
+        SDL_FillRect(screen, &box, SDL_MapRGB(screen->format, 48, 48, 48));
+        /* Only the picture is missing: the state itself is still labelled
+         * at the bottom left. */
+        TTF_Font *font = theme->menu_font ? theme->menu_font : theme->font;
+        centered(screen, font, mainui_translate(99, "No thumbnail"),
+                 top + (area - (font ? TTF_FontHeight(font) : 0)) / 2);
+    }
+    /* Use the same themed title bar as Game Info and other MainUI screens.
+     * Draw it after the preview so its background and status icons are not
+     * covered by full-screen save-state screenshots. */
+    mainui_draw_header(screen, theme, mainui_translate(416, "Saved Games"));
+    char counter[32];
+    snprintf(counter, sizeof counter, "%d/%d", viewer->save_index + 1, viewer->saves->count);
+    if (viewer->save_framed) {
+        /* Its own footer: the theme's background and footer bar
+         * (skin/tips-bar-bg.png) with the labels in the footer's font and
+         * colour where its hints and counter go, without hints;
+         * mainui_draw_footer() is left as other screens use it. */
+        mainui_blit(screen, theme->footer, 0, screen->h - SAVE_FRAME_TOP);
+        SDL_Surface *left = mainui_theme_text(theme, theme->hint_font, name, theme->hint_color);
+        SDL_Surface *right = mainui_theme_text(theme, theme->hint_font, counter, theme->hint_color);
+        int middle = screen->h - SAVE_FRAME_TOP / 2 - 1;
+        if (left) {
+            mainui_blit(screen, left, 20, middle - left->h / 2);
+        }
+        if (right) {
+            mainui_blit(screen, right, screen->w - 20 - right->w, middle - right->h / 2);
+        }
+        return;
+    }
+    /* The save's labels let its full-screen picture show through. */
+    badge_over(screen, theme->hint_font, name, 8, LABEL_ALPHA);
+    badge_over(screen, theme->hint_font, counter, -8, LABEL_ALPHA);
+}
+
 static void draw_menu(MainUIMediaViewer *viewer, MainUITheme *theme, SDL_Surface *screen)
 {
     /* The stock context popup is also used by Games/Expert. Keep its themed
      * background and selection, but suppress footer instructions here. */
-    static const char *const fallbacks[] = {"Game Info", "Gallery", "Game Maps",
-                                            "Walkthrough (TXT)", "Manual (PDF)"};
+    static const char *const fallbacks[] = {"Game Info", "Gallery",           "Saved Games",
+                                            "Game Maps", "Walkthrough (TXT)", "Manual (PDF)"};
+    static const int ids[] = {411, 412, 416, 413, 414, 415};
     /* Kept off the stack, and only drawn from, on the UI thread. */
     static MainUIContext menu;
     memset(&menu, 0, sizeof menu);
@@ -675,7 +1025,24 @@ static void draw_menu(MainUIMediaViewer *viewer, MainUITheme *theme, SDL_Surface
         /* These are presentation-only rows; the viewer handles selection. */
         menu.entries[i].action = CONTEXT_CUSTOM1;
         snprintf(menu.entries[i].label, sizeof menu.entries[i].label, "%s",
-                 mainui_translate(411 + type, fallbacks[type]));
+                 mainui_translate(ids[type], fallbacks[type]));
+    }
+    /* The PDF reader releases the old SDL-owned artwork after preflight.
+     * Recreate only the backdrop the popup needs, on the first redraw. */
+    if (viewer->menu_return == MEDIA_RETURN_MAPS && !viewer->image && !viewer->image_failed &&
+        viewer->map_count) {
+        int pan_x = viewer->map_pan_x, pan_y = viewer->map_pan_y;
+        show_map(viewer, screen);
+        viewer->map_pan_x = pan_x;
+        viewer->map_pan_y = pan_y;
+    }
+    else if (viewer->menu_return == MEDIA_RETURN_SAVES && !viewer->image && !viewer->image_failed &&
+             viewer->saves) {
+        show_save(viewer, screen);
+    }
+    else if (viewer->menu_return == MEDIA_RETURN_GALLERY && !viewer->image && !viewer->video &&
+             !viewer->video_pending && !viewer->image_failed && viewer->count) {
+        show(viewer, screen);
     }
     /* Over the view it was opened from, as it stands: Game Info is drawn
      * by the caller, a map or the walkthrough here, and the gallery's
@@ -686,6 +1053,9 @@ static void draw_menu(MainUIMediaViewer *viewer, MainUITheme *theme, SDL_Surface
     else if (viewer->menu_return == MEDIA_RETURN_TEXT) {
         draw_text(viewer, theme, screen);
     }
+    else if (viewer->menu_return == MEDIA_RETURN_SAVES) {
+        draw_save(viewer, theme, screen);
+    }
     else if (viewer->menu_return == MEDIA_RETURN_GALLERY) {
         SDL_Surface *shown =
             viewer->video ? mainui_video_frame(viewer->video, SDL_GetTicks()) : viewer->image;
@@ -693,9 +1063,10 @@ static void draw_menu(MainUIMediaViewer *viewer, MainUITheme *theme, SDL_Surface
             mainui_blit(screen, shown, (screen->w - shown->w) / 2, (screen->h - shown->h) / 2);
         }
     }
-    /* Game Info keeps its footer clear, as under other popups; the views
-     * without one are darkened to the bottom. */
-    if (viewer->menu_return == MEDIA_RETURN_DETAILS) {
+    /* Game Info and framed Saved Games keep their footer clear, as under
+     * other popups; the views without one are darkened to the bottom. */
+    if (viewer->menu_return == MEDIA_RETURN_DETAILS ||
+        (viewer->menu_return == MEDIA_RETURN_SAVES && viewer->save_framed)) {
         mainui_dim_popup_background(screen, theme);
     }
     else {
@@ -934,7 +1305,7 @@ static void draw_map(MainUIMediaViewer *viewer, MainUITheme *theme, SDL_Surface 
     /* No title: only which map it is, fixed while the image pans. */
     char counter[32];
     snprintf(counter, sizeof counter, "%d/%d", viewer->map_index + 1, viewer->map_count);
-    badge(screen, theme->hint_font, counter, -8);
+    badge_over(screen, theme->hint_font, counter, -8, LABEL_ALPHA);
 }
 
 void mainui_media_draw(MainUIMediaViewer *viewer, MainUITheme *theme, SDL_Surface *screen,
@@ -956,6 +1327,10 @@ void mainui_media_draw(MainUIMediaViewer *viewer, MainUITheme *theme, SDL_Surfac
     }
     if (viewer->mode == MEDIA_TEXT) {
         draw_text(viewer, theme, screen);
+        return;
+    }
+    if (viewer->mode == MEDIA_SAVES) {
+        draw_save(viewer, theme, screen);
         return;
     }
     if (viewer->video_pending && (snapshot || (Sint32)(SDL_GetTicks() - viewer->video_at) >= 0)) {
@@ -984,7 +1359,7 @@ void mainui_media_draw(MainUIMediaViewer *viewer, MainUITheme *theme, SDL_Surfac
     if (viewer->count > 1) {
         char counter[32];
         snprintf(counter, sizeof counter, "%d/%d", viewer->index + 1, viewer->count);
-        badge(screen, theme->hint_font, counter, -8);
+        badge_over(screen, theme->hint_font, counter, -8, LABEL_ALPHA);
     }
     bool paused = viewer->video && !*error && mainui_video_paused(viewer->video);
     if (paused) {
@@ -1021,6 +1396,7 @@ void mainui_media_close(MainUIMediaViewer *viewer)
     release(viewer);
     free(viewer->items);
     free(viewer->maps);
+    free(viewer->saves);
     if (viewer->text) {
         mainui_text_close(viewer->text);
         free(viewer->text);

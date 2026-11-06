@@ -11,7 +11,8 @@ At runtime the launcher reads `.lang` files from the card, looking in `miyoo/app
 ## Current gap
 
 IDs 400–410 are used by `src/menus/context.c`, `src/menus/stock_settings.c` and `src/app/settings_page.c`.
-IDs 411–415 are the rows of Game Info's media menu (`src/ui/media_viewer.c`): 411 goes back to Game Info, 412 opens the gallery, 413 the maps, 414 the walkthrough and 415 the PDF manual. Until these IDs land upstream, their built-in English fallbacks appear on devices whose language files omit them:
+IDs 411–416 are the rows of Game Info's media menu (`src/ui/media_viewer.c`): 411 goes back to Game Info, 412 opens the gallery, 413 the maps, 414 the walkthrough, 415 the PDF manual and 416 Saved Games, which also titles their messages.
+417 names the rolling backup in Saved Games and 418 their Auto entry. Until these IDs land upstream, their built-in English fallbacks appear on devices whose language files omit them:
 
 | ID | English |
 | --- | --- |
@@ -31,6 +32,9 @@ IDs 411–415 are the rows of Game Info's media menu (`src/ui/media_viewer.c`): 
 | 413 | Game Maps |
 | 414 | Walkthrough (TXT) |
 | 415 | Manual (PDF) |
+| 416 | Saved Games |
+| 417 | Previous Session |
+| 418 | Auto Save |
 
 The maps and the walkthrough show no titles, only numbers; their few error messages, such as "Cannot show this map" and the walkthrough search's "Not found", stay in English. The fix for missing translations is upstream: the new keys need to be added to Onion's language files, not installed from here. Copying this file onto a card would only cover English and would overwrite a file Onion owns.
 

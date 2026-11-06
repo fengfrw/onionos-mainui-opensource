@@ -153,6 +153,7 @@ This applies to ROM lists, Favorites, Recents, Apps and Search results.
 | Down / Up | The next / previous row. From the last row it wraps to the first, and from the first to the last. |
 | R / L | One page (a screen of rows) down / up, stopping at the first and last row. |
 | Right | Opens the details of the selected game in game lists. |
+| Left | Opens the selected game's [Saved Games](#saved-games) in game lists, when it has any and `left_shortcut` in `game-menu.json` is `true`; else, as before, starts its title scrolling again. A title already scrolling is started again by the first Left, and the next Left on that game opens them. |
 | Y | Launches the selected game as A does, in ROM lists, Favorites, Recents and Search results, as stock does. With Onion's default keymap (`mainui_button_y` set to `glo` in `.tmp_update/config/keymap.json`), Onion then opens Game List Options for that game instead of starting it. Keymon sets the flag for that (`/tmp/launch_alt`) on Y, but not while its cached state does not say MainUI is running (after boot, or just after a game), so MainUI sets it too. With no Y shortcut (Tweaks shows "A button"), Y launches as A does. With `fav` as the Y shortcut, Y adds the game to Favorites, or removes it when it is one, instead of launching it. With an app or tool as the Y shortcut, keymon runs it; should keymon miss the press, Y does nothing. If `keymap.json` exists but cannot be read, Y does nothing either, without a message; the log says why (`[launch] Y ignored`). Y on a folder or `..` does nothing. Game List Options removes the first line of `recentlist.json`, taken to be this launch, so Y puts the game's line first and leaves the other lines as they are: backing out leaves Recents unchanged. That line is written before the launch: if it cannot be, nothing is launched (A still is). When a Y launch fails, keymon's Y flag is cleared, and every other launch clears it too: keymon sets it on any Y press, also one MainUI ignores (on a folder, say), and only B or X clear it, so A starts the game instead of opening Game List Options. Y acts when it is released, as stock does: with an app or tool set as the Y shortcut in Tweaks, keymon runs it as Y goes down, and MainUI, killed by then, neither launches the game nor puts it in Recents. In Apps, with `fav` as the Y shortcut, Y adds the selected app to Favorites, or removes it when it is one. Elsewhere (main menu, console grids, Apps with another shortcut, Settings) Y does nothing; stock opens the selection there as A does. That is left out for now: with Onion's default Y shortcut, keymon arms Game List Options on any Y press, so what Y opened there could start with it. |
 | X | Acts as B, as stock does. With a MainUI shortcut as the X shortcut (`mainui_button_x` in `keymap.json`), X on a game in ROM lists, Favorites, Recents and Search results does that instead, when X is released: `fav` adds the game to Favorites or removes it, as Y can, and `glo` opens Game List Options for it, as Y does by default. Keymon sets its Game List Options flag only for Y, and clears it as X goes down, so MainUI sets it after the release. In Game Info, `fav` on X or Y adds or removes the game shown, and Game Info closes when that removes it from the Favorites list it was opened from. With `fav` as the X shortcut, X in Apps adds the selected app to Favorites or removes it, as Y can. With `fav` or `glo` as the X shortcut, X does nothing anywhere else (folders, `..`, console grids, menus, dialogs, Apps for `glo`, and Game Info for `glo`), as Y with a shortcut does only that. With no X shortcut, or an app or tool (keymon's), X is B. On the on-screen keyboard X types a space and Y erases, whatever their shortcuts. |
 | Select | Opens the context menu when Select is released, as stock does with Onion's keymon, and closes it. Not when another button went down while Select was held: Select with L2 or R2 is keymon's brightness, and Select, Start and L1 or R1 its CPU clock. While Select or Start is held, MainUI ignores the other buttons, which are keymon's, so a combo neither pages nor jumps in a list. Keymon still sends a Menu press after the CPU clock combo, and on the Mini Plus and Flip after Select with L2 or R2; unlike stock, that does not open the menu here. |
@@ -194,7 +195,10 @@ A video closed this way does not play again until another game has been selected
   "roms": ["launch", "favorite", "delete", "search", "refresh"],
   "favorites": ["move", "create_folder", "sort", "remove_favorite", "rename_folder", "delete_folder"],
   "recents": ["launch", "remove_recent", "clear_recents"],
-  "search_results": ["launch", "favorite"]
+  "search_results": ["launch", "favorite"],
+  "details": ["game_info", "gallery", "saved_games", "maps", "walkthrough", "manual"],
+  "gallery": { "right_shortcut": true, "upscale_images": true },
+  "saved_games": { "resume_mode": "backup", "left_shortcut": false, "show_auto": false, "upscale_preview": true, "correct_aspect_ratio": true, "layout": "framed", "disabled_rom_dirs": ["ARCADE"] }
 }
 ```
 
@@ -202,6 +206,17 @@ A menu shows the rows listed for its section, in that order, that the selection 
 `favorite` is Add to favorites or Remove Favorite, and `move` is Move here while a Favorite is being moved. A row left out is hidden; an empty list means that section has no menu, and Select or Menu does nothing there.
 
 A missing section keeps its default menu. Unknown and repeated IDs are skipped. A missing file gives the default menus, and so does a file that is not a JSON object, which the log notes once (`[menu] ... game-menu.json is not a JSON object`).
+`details` orders and hides the rows of Game Info's [media menu](#media-menu-maps-and-manuals) the same way. Game Info always stays in it, first unless the list places it, and leaving out `saved_games` turns [Saved Games](#saved-games) off, Left in game lists too.
+`gallery`'s `right_shortcut`, `false`, turns off Right's gallery in Game Info; Select still opens it from the media menu. Anything else keeps it on.
+`upscale_images`, `false`, shows an image smaller than the screen at its own size, centred; larger ones are still made to fit. Anything else enlarges them to the screen, keeping their shape. Videos, maps and Saved Games are not affected.
+`saved_games`'s `resume_mode` is `backup`, `overwrite` or `swap`; anything else is `backup`. Its `left_shortcut`, `true`, turns on Left's Saved Games in game lists, which are otherwise only in the media menu; `upscale_preview`, `false`, keeps a save's picture at its own size when it fits the screen, instead of enlarging it; `show_auto`, `true`, shows the game's Auto Save among them.
+A save's picture shows in its console's screen shape, enlarged or not, unless `correct_aspect_ratio` is `false`: 4:3 for FC, NES, FDS, SFC, SNES, MD, GEN, GENESIS, SMS, MS, PCE, PCECD, TG16, PS, PS1 and PSX, 10:9 for GB, GBC and GG, and 3:2 for GBA, by the name of the ROM folder in any case.
+RedOnion's NEOGEO, NEOCD, SEGACD, THIRTYTWOX, SEGASGONE, SATURN, ATARI, FIFTYTWOHUNDRED, SEVENTYEIGHTHUNDRED, EIGHTHUNDRED, ATARIST, COLECO, INTELLIVISION, MSX, AMIGA, AMIGACD, DOS, ZXS, COMMODORE, CPC, PANASONIC, SGFX, SATELLAVIEW, FAIRCHILD and ODYSSEY are 4:3 too; arcade folders and handhelds with other screens keep their pictures' shape.
+With `false`, and for other folders, a picture keeps its own shape; anything else keeps the default. Only the picture shown changes, not its file nor RetroArch's settings.
+An arcade game's picture shows as RetroArch saved it, never turned: a vertical game's is saved in the same landscape size as a horizontal game's, so the two cannot be told apart, and a vertical game's picture can show on its side or squeezed.
+`disabled_rom_dirs` lists ROM folders, by name in any case, whose games have no Saved Games: Left is as before for them, the media menu does not offer them, and their save states are not even looked for; the files themselves stay as they are.
+Without it the list is `["ARCADE"]` (see [Cores and save states](#cores-and-save-states)); a list given replaces it, such as `["ARCADE", "SCUMMVM"]`, and `[]` keeps Saved Games everywhere. Entries that are not folder names are skipped.
+`layout`, `"overlay"`, shows Saved Games' pictures over the whole screen with their labels on boxes the picture shows through; anything else is `"framed"`, the default, which fits them between the theme's title bar and a footer of their own.
 The file is read when MainUI starts and never written. Confirmations still ask as before. The main menu's context menu (`main-menu.json`) and Apps are not affected; the console page's menu is set with `menu` in [`console-view.json`](#carousel-and-list).
 
 ## Favorites in Apps
@@ -219,7 +234,9 @@ Only the description scrolls. Without the file Game Info is as before.
 
 ## Game Info's media gallery
 
-Right in Game Info opens a fullscreen gallery of the game's media, when it has any, and only the gallery: without gallery items Right does nothing there, and Select opens the [media menu](#media-menu-maps-and-manuals) for maps and manuals. Right shows the next item, and on the last one does nothing, and Left the previous one; Left on the first item goes back to Game Info, as B does from any item.
+Right in Game Info opens a fullscreen gallery of the game's media, when it has any, and only the gallery: without gallery items Right does nothing there, and Select opens the [media menu](#media-menu-maps-and-manuals) for its other media.
+With `right_shortcut` `false` under `gallery` in [`game-menu.json`](#game-list-context-menus), Right does nothing there, and the media menu still offers the gallery.
+In the gallery, Right shows the next item, and on the last one does nothing, and Left the previous one; Left on the first item goes back to Game Info, as B does from any item, when Right opened the gallery. Opened from the media menu, it stops at both ends, and B goes back.
 A video starts once it has been shown for 100 ms, so moving past it with Right or Left starts nothing. On a video, A pauses it (a pause sign shows at the bottom left) and plays it on, and L and R jump about 5 seconds back and forward; paused, it stays paused there.
 A jump lands on a keyframe, a picture the video can start from, and shows it at once: forward the first one at least 5 seconds on, back the last one at least 5 seconds back, so it can go further than 5 seconds; past the last one the video starts again.
 Videos with a keyframe every second or two, such as `ffmpeg -g 30` makes at 30 frames per second, jump closest to 5 seconds. While the device sleeps a video stands still, and on waking it goes on from there. Select opens the media menu over the gallery. Other buttons do nothing in the gallery, and the X and Y shortcuts do not act there.
@@ -263,9 +280,10 @@ A video without sound, or whose sound cannot be decoded, plays silently; so do v
 
 ### Media menu, maps and manuals
 
-Select in Game Info, for a game with any media, opens a menu in the theme's context-menu style over Game Info: Gallery, Game Maps, Walkthrough (TXT) and Manual (PDF), each only when the game has it. Up and Down move round it, A opens the row, and B or Select closes it. For a game without media Select does nothing there.
-Select in the gallery, a map or the walkthrough opens the same menu over it, with Game Info as its first row and without the one shown; B or Select goes back to it as it was, a video paused by the menu playing on from where it stopped.
-B in the gallery, a map or the walkthrough goes back to Game Info, and B there back to the list, as before. No titles or button hints show in the gallery, the maps or the walkthrough.
+Select in Game Info, for a game with any media, opens a menu in the theme's context-menu style over Game Info: Gallery, Saved Games, Game Maps, Walkthrough (TXT) and Manual (PDF), each only when the game has it, in the order `details` in [`game-menu.json`](#game-list-context-menus) gives.
+Up and Down move round it, A opens the row, and B or Select closes it. For a game without media, or when `details` leaves the menu no row for the game, Select does nothing there.
+Select in the gallery, Saved Games, a map or the walkthrough opens the same menu over it, with Game Info as its first row and without the one shown; B or Select goes back to it as it was, a video paused by the menu playing on from where it stopped.
+B in the gallery, Saved Games, a map or the walkthrough goes back to Game Info, and B there back to the list, as before. No titles or button hints show in the gallery, the maps or the walkthrough. The gallery's counter and pause sign and a map's counter sit on black boxes the picture shows through; the walkthrough's line number, over text, on a solid one.
 
 Maps are PNG pictures in `media/maps`, named after the ROM file: `Game.png`, then `Game-1.png`, `Game-2.png` and on, in number order, up to 32. JPEG and BMP maps and the older `Game_map1.png` names are not shown.
 A map shows fitted to the screen, with which one it is, such as `2/3`, at the bottom right. L and R show the previous and next map, round the ends.
@@ -274,7 +292,42 @@ R2 shows the map at its own size, up to 2000 pixels a side, where the D-pad move
 The walkthrough is `media/manuals/Game.txt`, UTF-8 (other bytes show as `?`), of which the first 2 MiB are read. It shows in the theme's Game Info font, wrapped at words, with the number of its top line at the bottom left: Up and Down move a line, L and R 15 lines, L2 and R2 75.
 A searches it: the keyboard opens with the last search, and its OK looks for that text from the page shown, A to Z in any case, going round from the start. The line found goes to the top, every match on the page marked; Start finds the next one. When there is none, `Not found` shows for 2 seconds in place of the line number.
 The manual is `media/manuals/Game.pdf`, opened in Onion's PDF reader, Green (`.tmp_update/bin/green/green`, with its libraries in `.tmp_update/lib/parasyte`), which MainUI does not install. While Green shows it MainUI hands over the screen and sound, and takes them back after; B in Green closes it. Without Green the menu says so.
+Back from Green, the menu is over the map, save picture or gallery picture it was opened from, as before. A gallery video is not kept while Green runs: the menu is then over black, and the video starts again from its beginning when the menu closes.
 As for the gallery, the folder and file names match in any case on the SD card's FAT, and must be as above elsewhere.
+
+### Saved Games
+
+A RetroArch game's save states show as Saved Games: Saved Games in Game Info's media menu opens them over Game Info. With `left_shortcut` on in [`game-menu.json`](#game-list-context-menus), Left on the game in a ROM list, Favorites, Recents or Search results opens them too, and B there goes back to the list.
+They are the states RetroArch keeps in `Saves/CurrentProfile/states/<core>/`, `Game.state` (slot 0) and `Game.state1` and on, named after the ROM file, with their pictures, `Game.state1.png` and so on.
+The core is the one the game launches with: its own, chosen in Game List Options, else, on RedOnion, the one chosen there for all the system's games (`.tmp_update/config/system_cores`), each only when its `.so` is in `RetroArch/.retroarch/cores`, else its console's in `launch.sh`; the folder is named as the core's `.info` names it.
+A game whose launcher names no RetroArch core, or without any state shown, Auto included with `show_auto`, has no Saved Games, and Left is as before for it; so has a game in a folder `disabled_rom_dirs` lists.
+
+They show from left to right by slot number: the Previous Session, below, first, then the ten highest slots, the lowest of them first, then, with `show_auto`, Auto Save, the game's `Game.state.auto`, when there is one. They open on the rightmost.
+Each shows as its picture in its console's shape, or its own with `correct_aspect_ratio` `false` (only made to fit when `upscale_preview` is `false`), or a grey box saying "No thumbnail" when it has none, under the theme's title bar with Saved Games in it.
+By default, `"framed"`, the picture is fitted to the 640x360 between the title bar and a footer, on the theme's background; the footer has the theme's footer bar, with its slot, such as `#5`, or its name at the left and which one it is, such as `5/5`, at the right, in the footer's font and colour, without button hints.
+With `"layout": "overlay"` the picture is scaled to the full screen, and the labels are at the bottom left and right on boxes the picture shows through. The highest slot is not always the latest save, as slots can be saved over; save times are not used.
+Left goes to lower slots and Right to higher ones; Left stops at the first, and the held Left that opened them does nothing more. Opened by Left in a list, Right on the last goes back to the list as B does, a held Right stopping at the last; opened from the media menu, Right stops at the last, and B goes back to Game Info.
+A on Auto Save starts the game from it, changing no file. A on a slot resumes it: it goes into the game's Auto state, and the game starts, loading Auto, as GameSwitcher resumes a state (Onion's `/tmp/force_auto_load_state`).
+`resume_mode` in [`game-menu.json`](#game-list-context-menus) says what becomes of Auto:
+
+| Mode | Auto before | The state chosen | If the game cannot launch |
+| --- | --- | --- | --- |
+| `backup` (default) | kept in one backup per game, `Game.state.auto.mainui-backup`, replaced by the next load | unchanged | Auto is put back from the backup |
+| `overwrite` | replaced | unchanged | Auto keeps the state, as there is nothing to put back |
+| `swap` | moved into the chosen slot (only copied there without an Auto) | holds Auto's | they are exchanged back |
+
+With `backup`, the backup shows first as Previous Session: A on it exchanges it with Auto, so neither is lost, and again exchanges them back; without an Auto, it is copied into Auto and stays. Only `swap` ever writes a numbered state; RetroArch's slot numbering is left as it is. Pictures go with their states; a state without one leaves Auto without one.
+Each file is written in full beside the one it replaces, as `.mainui-new`, then put in its place, so it is always whole, old or new.
+If the card refuses that, what was not put in place stays as `.mainui-new`, perhaps the only copy of the Auto before, and a message says so. Such a file is never overwritten: a resume that would write over it is refused, naming it, until it is copied back by hand or deleted. A on Auto Save changes no file, and a resume writing other files leaves it alone.
+
+#### Cores and save states
+
+Saved Games lists the states RetroArch has saved for the game's core, and A resumes one as GameSwitcher does: the state becomes Auto, and the core loads it as the game starts. Whether that works is up to the core, not MainUI.
+Some cores save states but refuse to load one before their first frame: MAME 2003-Plus, RedOnion's default arcade core, is one, so its Auto Save can exist and still not load at startup, the game then starting from the beginning, and what it supports differs from game to game; this is why `disabled_rom_dirs` lists ARCADE by default.
+MAME 2003 is game-dependent too, while MAME 2000, FinalBurn Neo (with some limits) and DOSBox Pure support states.
+Some cores have none at all, so Saved Games show none for them: blueMSX, the original DOSBox core (DOSBox-SVN), ScummVM (its games' own saves still work) and fake-08 for PICO-8.
+With the default `backup` mode the Auto before a resume stays as Previous Session, so a state a core would not load loses nothing: choose Previous Session to go back.
+This follows the libretro documentation; the cores RedOnion installs, and the one chosen for a game, decide what actually happens.
 
 ## When a list changes
 

@@ -1,14 +1,15 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """Right in Game Info opens a fullscreen gallery of the game's media: front and
 back covers, 3D box, screenshots and video from media/ in its console's ROM
-folder, by the ROM file's name; never the Imgs cover Game Info shows. Right
-and Left browse, and B, or Left on the first item, returns to Game Info.
-Maps in media/maps and a walkthrough in media/manuals show on their own, B
-going back to Game Info from them too; Select in Game Info, the gallery, a
-map or the walkthrough opens a menu of the others. Videos play with Onion's
-FFmpeg, loaded from .tmp_update/lib/parasyte only then; here a stub stands in
-for it (tests/ffmpeg_stub.c) under FFmpeg's sonames, with LD_LIBRARY_PATH as
-Onion starts MainUI, without that folder."""
+folder, by the ROM file's name; never the Imgs cover Game Info shows. Right and
+Left browse, and B returns to Game Info, as Left on the first item does when
+Right opened the gallery, not the media menu. Maps in media/maps and a
+walkthrough in media/manuals show on their own, B going back to Game Info from
+them too; Select in Game Info, the gallery, a map or the walkthrough opens a
+menu of the others. Videos play with Onion's FFmpeg, loaded from
+.tmp_update/lib/parasyte only then; here a stub stands in for it
+(tests/ffmpeg_stub.c) under FFmpeg's sonames, with LD_LIBRARY_PATH as Onion
+starts MainUI, without that folder."""
 import json
 import os
 from pathlib import Path
@@ -161,6 +162,15 @@ box, _ = shot("DRR")
 assert centre(box) == COLOURS["box2dfront"], centre(box)
 assert box.getpixel((5, 240)) == (0, 0, 0) and box.getpixel((315 - 180, 240)) == (0, 0, 0)
 assert box.getpixel((320 - 170, 240)) == COLOURS["box2dfront"]
+# Configurable Game Info Right shortcut: default ON; OFF keeps Game Info on
+# Right, but Select still opens the media menu, and Gallery remains reachable.
+game_menu = SD / ".tmp_update/config/game-menu.json"
+game_menu.write_text(json.dumps({"gallery": {"right_shortcut": False}}))
+disabled, _ = shot("DRR")
+assert disabled.tobytes() == info.tobytes()
+menu_screen, _ = shot("DRS")
+assert menu_screen.tobytes() != info.tobytes()
+game_menu.unlink()
 # Then the back cover, the 3D box and the screenshots, which fill the screen;
 # then the video, the last, where Right stays. Never the Imgs cover.
 order = ["box2dback", "box3d", "screenshot", "screenshot-1", "screenshot-2"]
@@ -170,6 +180,16 @@ for steps, key in enumerate(order, 1):
     assert COVER not in colours(image), key
 full, _ = shot("DRRRRR")
 assert full.getpixel((2, 2)) == COLOURS["screenshot"]
+# With gallery upscale_images false the 320x240 screenshot keeps its own
+# size, centred on black.
+game_menu.write_text(json.dumps({"gallery": {"upscale_images": False}}))
+native, _ = shot("DRRRRR")
+game_menu.unlink()
+assert centre(native) == COLOURS["screenshot"] and native.getpixel((2, 2)) == (0, 0, 0)
+assert native.getpixel((165, 125)) == COLOURS["screenshot"]
+assert native.getpixel((155, 240)) == (0, 0, 0) and native.getpixel((485, 240)) == (0, 0, 0)
+# The counter's box lets the picture show through, darkened.
+assert full.getpixel((629, 470)) not in (COLOURS["screenshot"], (0, 0, 0))
 VIDEO = "DRR" + "R" * 6  # the seventh item
 video, log = shot(VIDEO)
 assert centre(video) == FRAME0 and video.getpixel((2, 2)) == FRAME0, centre(video)
@@ -226,6 +246,13 @@ assert shot("DRRSBB")[0] == info
 assert shot("DRS")[0] != info
 assert shot("DRSA")[0] == box
 assert shot("DRSB")[0] == info
+# Gallery selected from the media menu stops at both ends, unlike Right
+# shortcut entry; B returns to Game Info.
+assert shot("DRSAL")[0] == box
+assert frame(shot("DRSA" + "R" * 8)[0]) <= 4
+assert shot("DRSALB")[0] == info
+# Cancelling Select over a shortcut-opened gallery keeps its edge exit.
+assert shot("DRRSBL")[0] == info
 assert shot("DRSDA")[0] == box
 # A game without media: Right and Select do nothing in Game Info.
 plain, _ = shot("DDR")
@@ -333,6 +360,7 @@ footer = (0, 421, 640, 480)
 assert shot("DRS")[0].crop(footer).tobytes() == info_now.crop(footer).tobytes()
 assert shot("DRRSDA2SA")[0] == info_now
 assert shot("DRRSDA2SDA")[0] == box
+assert shot("DRRSDA2SDAL")[0] == box  # menu-selected gallery stops at first
 # B in a map goes back to Game Info.
 assert shot("DRRSDAB")[0] == info_now
 # A toggles native size and fit; R2 (4) shows native size and L2 (3) fits,

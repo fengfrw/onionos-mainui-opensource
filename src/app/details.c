@@ -17,17 +17,22 @@ void mainui_details_close(MainUIDetails *details)
     details->media.sleeping = sleeping;
 }
 
-void mainui_details_media(MainUIDetails *details, const char *sd, SDL_Surface *screen,
-                          bool context_menu)
+bool mainui_details_media(MainUIDetails *details, const char *sd, SDL_Surface *screen, int start,
+                          const MainUIMediaOptions *options)
 {
-    if (details->open && (context_menu ? mainui_media_open_menu(&details->media, details->rom_root,
-                                                                details->host_rom, sd, screen)
-                                       : mainui_media_open(&details->media, details->rom_root,
-                                                           details->host_rom, sd, screen))) {
-        /* The description stops and goes back to the top as media opens,
-         * and starts again after its delay on return. */
-        mainui_details_reset_scroll(details);
+    if (!details->open) {
+        return false;
     }
+    MainUIMediaOptions with = options ? *options : (MainUIMediaOptions){0};
+    with.launch = *details->launch ? details->launch : NULL;
+    if (!mainui_media_open(&details->media, details->rom_root, details->host_rom, sd, screen,
+                           options ? &with : NULL, start)) {
+        return false;
+    }
+    /* The description stops and goes back to the top as media opens, and
+     * starts again after its delay on return. */
+    mainui_details_reset_scroll(details);
+    return true;
 }
 
 void mainui_details_reset_scroll(MainUIDetails *details)
@@ -141,6 +146,16 @@ bool mainui_details_locate(MainUICatalog *catalog, const MainUILibrary *library,
     return true;
 }
 
+bool mainui_details_launcher(MainUICatalog *catalog, const MainUILibrary *library, int row,
+                             char host_rom[MAINUI_PATH_MAX], char launch[MAINUI_PATH_MAX])
+{
+    const char *label = NULL, *rom = NULL, *from = NULL;
+    int index;
+    return game_at(catalog, library, row, &label, &rom, &from, &index) && from &&
+           mainui_catalog_path(host_rom, catalog->sd, catalog->sd, rom) &&
+           mainui_catalog_path(launch, catalog->sd, catalog->sd, from);
+}
+
 bool mainui_details_open(MainUIDetails *details, MainUICatalog *catalog,
                          const MainUILibrary *library, const MainUILibrary *favorites, int row,
                          MainUIPreview *preview, const MainUIConfig *config)
@@ -175,6 +190,10 @@ bool mainui_details_open(MainUIDetails *details, MainUICatalog *catalog,
     snprintf(details->rom_root, sizeof details->rom_root, "%s", root ? root : "");
     free(source);
     snprintf(details->host_rom, sizeof details->host_rom, "%s", host);
+    /* The launcher, for the game's core and save states. */
+    if (!launch || !mainui_catalog_path(details->launch, catalog->sd, catalog->sd, launch)) {
+        details->launch[0] = 0;
+    }
     cJSON *record = library ? NULL : mainui_catalog_record(catalog, index);
     const cJSON *saved_rom = cJSON_GetObjectItemCaseSensitive(record, "rompath");
     snprintf(details->rom, sizeof details->rom, "%s",

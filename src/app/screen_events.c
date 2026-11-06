@@ -1,20 +1,25 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 #include "app/screen_events.h"
+#include "app/loop.h"
 #include "app/pdf.h"
 #include "app/positions.h"
 #include "app/render.h"
 #include "catalog/saved_actions.h"
+#include "localization/language.h"
 #include "menus/favorite_context.h"
 #include "platform/audio.h"
 #include "platform/device_request.h"
+#include "platform/files.h"
 #include "platform/input.h"
 #include "platform/launch.h"
 #include "platform/menu_button.h"
 #include "platform/system_config.h"
 #include "platform/timing.h"
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 bool mainui_launch_tool(const char *directory, const char *sd, const MainUILaunchSource *source,
@@ -1255,6 +1260,144 @@ static void toggle_favorite(MainUIApp *ui)
  * the X shortcut, which acts from its release without one: after a start,
  * a list reload or entering Favorites it would otherwise describe a screen
  * no longer shown, or a list already freed. */
+/* Game Info's media menu as game-menu.json orders it, Saved Games with the
+ * Previous Session in the backup mode. */
+static MainUIMediaOptions media_options(const MainUIApp *ui)
+{
+    MainUIMediaOptions options = {.order_count = ui->game_menu.details_count,
+                                  .previous = ui->game_menu.resume_mode == MAINUI_RESUME_BACKUP,
+                                  .autosave = ui->game_menu.saves_auto,
+                                  .upscale = ui->game_menu.saves_upscale,
+                                  .gallery_upscale = ui->game_menu.gallery_upscale,
+                                  .framed = ui->game_menu.saves_framed,
+                                  .game_menu = &ui->game_menu,
+                                  .correct_aspect = ui->game_menu.saves_correct_aspect};
+    memcpy(options.order, ui->game_menu.details, sizeof options.order);
+    return options;
+}
+
+static void saves_message(MainUIApp *ui, const char *body)
+{
+    snprintf(ui->message_title, sizeof ui->message_title, "%s",
+             mainui_translate(416, "Saved Games"));
+    snprintf(ui->message_body, sizeof ui->message_body, "%s", body);
+}
+
+/* A on a save in Saved Games: it goes into the game's Auto state as
+ * game-menu.json's resume_mode says, and the game launches, as GameSwitcher
+ * resumes a state: Onion's force_auto_load_state flag, in the handoff
+ * folder (/tmp), has RetroArch load Auto this once. When the game cannot
+ * launch, Auto is put back (overwrite has nothing to put back); if even
+ * that fails, the message says where the earlier Auto is. */
+static void resume_save(MainUIApp *ui)
+{
+    MainUIMediaViewer *media = &ui->details.media;
+    char flag[4096], error[256];
+    int n = ui->handoff_dir
+                ? snprintf(flag, sizeof flag, "%s/force_auto_load_state", ui->handoff_dir)
+                : -1;
+    int undo = MAINUI_SAVES_UNDO_NONE;
+    struct stat launcher, rom;
+    if (!media->saves || n < 0 || n >= (int)sizeof flag) {
+        saves_message(ui, "Launch unavailable.");
+    }
+    /* Onion could not start the game without its launcher, but Auto would
+     * already be replaced: refuse before any file changes. */
+    else if (!*ui->details.launch || stat(ui->details.launch, &launcher) ||
+             !S_ISREG(launcher.st_mode)) {
+        saves_message(ui, "The emulator's launch script is missing.");
+    }
+    /* Nor without the game itself, moved or deleted while its console's
+     * cache still lists it. */
+    else if (!*ui->details.host_rom || stat(ui->details.host_rom, &rom)) {
+        saves_message(ui, errno == ENOENT || errno == ENOTDIR || !*ui->details.host_rom
+                              ? "The game's file is missing."
+                              : "Cannot check the game's file. Try again.");
+    }
+    else if (!mainui_write_text_atomic(flag, "")) {
+        saves_message(ui, "Cannot ask RetroArch to load the state.");
+    }
+    else if (!mainui_saves_resume(media->saves, media->save_index, ui->game_menu.resume_mode, &undo,
+                                  error)) {
+        mainui_remove_file(flag);
+        saves_message(ui, error);
+    }
+    else {
+        ui->launch_pending =
+            mainui_session_launch(ui->handoff_dir, &ui->launch_source, NULL, ui->message_body);
+        if (!ui->launch_pending) {
+            mainui_remove_file(flag);
+            if (undo == MAINUI_SAVES_UNDO_KEPT) {
+                saves_message(ui, "The game did not launch. Auto holds the chosen state.");
+            }
+            else if (mainui_saves_undo(media->saves, media->save_index, undo, error)) {
+                snprintf(ui->message_title, sizeof ui->message_title, "Launch unavailable");
+            }
+            else {
+                char body[256];
+                snprintf(body, sizeof body,
+                         "The game did not launch, and Auto cannot be put back: it is in %s, or "
+                         "beside it as .mainui-new.",
+                         undo == MAINUI_SAVES_UNDO_SWAP ? "the chosen slot" : "the backup");
+                saves_message(ui, body);
+            }
+        }
+    }
+    /* Failed launches and interrupted state operations may have updated
+     * Auto or Previous Session. The viewer must show the files now on disk. */
+    if (!ui->launch_pending && media->saves) {
+        mainui_media_refresh_saves(media, ui->screen,
+                                   ui->game_menu.resume_mode == MAINUI_RESUME_BACKUP);
+    }
+}
+
+/* Left on a game in a game list opens its Saved Games, over Game Info opened
+ * unseen, when game-menu.json lists them, turns on their left_shortcut,
+ * and the game has any. A title
+ * scrolling then is reset instead, as Left did, and the next Left on that
+ * game opens them; a held Left's repeats only reset the title. False leaves
+ * Left as it was. */
+static bool saved_games_left(MainUIApp *ui, bool repeat)
+{
+    if (repeat || !game_selected(ui) || !ui->game_menu.saves_left ||
+        !mainui_game_menu_details(&ui->game_menu, MAINUI_DETAILS_SAVED_GAMES)) {
+        return false;
+    }
+    char *rom = malloc(MAINUI_PATH_MAX), *launch = malloc(MAINUI_PATH_MAX);
+    MainUISaves *saves = malloc(sizeof *saves);
+    /* A folder with Saved Games turned off: not looked for, Left as before. */
+    bool any = rom && launch && saves &&
+               mainui_details_locate(ui->catalog, ui->library, ui->view.selected, rom, launch) &&
+               !mainui_game_menu_saves_disabled(&ui->game_menu, launch) &&
+               mainui_details_launcher(ui->catalog, ui->library, ui->view.selected, rom, launch) &&
+               mainui_saves_locate(saves, ui->sd, launch, rom) &&
+               mainui_saves_list(saves, ui->game_menu.resume_mode == MAINUI_RESUME_BACKUP,
+                                 ui->game_menu.saves_auto) > 0;
+    free(rom);
+    free(launch);
+    free(saves);
+    if (!any) {
+        return false;
+    }
+    if (!ui->saves_left_armed && mainui_marquee_moving(ui, SDL_GetTicks())) {
+        ui->saves_left_armed = true;
+        return false;
+    }
+    ui->saves_left_armed = false;
+    MainUIMediaOptions options = media_options(ui);
+    if (!mainui_details_open(&ui->details, ui->catalog, ui->library, ui->favorites,
+                             ui->view.selected, &ui->preview, &ui->config)) {
+        return false;
+    }
+    if (!mainui_details_media(&ui->details, ui->sd, ui->screen, MAINUI_MEDIA_START_SAVES,
+                              &options)) {
+        mainui_details_close(&ui->details);
+        return false;
+    }
+    ui->details.media.from_list = true;
+    return true;
+}
+
 static void prepare_launch(MainUIApp *ui)
 {
     ui->search.view = ui->view;
@@ -1398,6 +1541,9 @@ static void dispatch_key(MainUIApp *ui, SDL_Event *event)
         ui->search.release_pending = false;
     }
     bool was_held = pressed >= 0 && pressed < SDLK_LAST && ui->held[pressed];
+    if (key != SDLK_LEFT) {
+        ui->saves_left_armed = false;
+    }
 
     if (pressed >= 0 && pressed < SDLK_LAST) {
         ui->held[pressed] = true;
@@ -1414,9 +1560,23 @@ static void dispatch_key(MainUIApp *ui, SDL_Event *event)
     }
     /* The media gallery, over Game Info, takes every key. Right opens it. */
     if (ui->details.open && ui->details.media.open) {
+        bool from_list = ui->details.media.from_list;
+        ui->details.media.key_held = was_held;
         mainui_media_key(&ui->details.media, key, ui->screen);
+        /* B, or Right leaving, back from Saved Games opened by Left in the
+         * list: the list. */
+        if (!ui->details.media.open && from_list && (key == SDLK_ESCAPE || key == SDLK_RIGHT)) {
+            mainui_details_close(&ui->details);
+            ui->cached_start = -1;
+            ui->selected_at = SDL_GetTicks();
+            return;
+        }
         if (!ui->details.media.open) {
             mainui_details_reset_scroll(&ui->details);
+        }
+        if (ui->details.media.resume_requested) {
+            ui->details.media.resume_requested = false;
+            resume_save(ui);
         }
         if (ui->details.media.pdf_requested) {
             ui->details.media.pdf_requested = false;
@@ -1431,7 +1591,13 @@ static void dispatch_key(MainUIApp *ui, SDL_Event *event)
         return;
     }
     if (ui->details.open && (key == SDLK_RIGHT || key == SDLK_RCTRL)) {
-        mainui_details_media(&ui->details, ui->sd, ui->screen, key == SDLK_RCTRL);
+        if (key == SDLK_RIGHT && !ui->game_menu.gallery_right) {
+            return;
+        }
+        MainUIMediaOptions options = media_options(ui);
+        mainui_details_media(
+            &ui->details, ui->sd, ui->screen,
+            key == SDLK_RCTRL ? MAINUI_MEDIA_START_MENU : MAINUI_MEDIA_START_GALLERY, &options);
         return;
     }
     if (ui->details.open && key == SDLK_RETURN && ui->handoff_dir) {
@@ -1481,6 +1647,10 @@ static void dispatch_key(MainUIApp *ui, SDL_Event *event)
     if (game_list && ui->catalog && key == SDLK_RIGHT &&
         mainui_details_open(&ui->details, ui->catalog, ui->library, ui->favorites,
                             ui->view.selected, &ui->preview, &ui->config)) {
+        ui->letter_jump.active = false;
+        return;
+    }
+    if (game_list && ui->catalog && key == SDLK_LEFT && saved_games_left(ui, was_held)) {
         ui->letter_jump.active = false;
         return;
     }

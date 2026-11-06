@@ -3,6 +3,7 @@
 #include "app/render.h"
 #include "app/startup.h"
 #include "platform/audio.h"
+#include "platform/menu_button.h"
 #include "platform/system_config.h"
 #include "ui/panels.h"
 #include <errno.h>
@@ -80,6 +81,12 @@ static bool run_green(const char *exe, const char *dir, const char *libs, const 
         close(awake);
     }
     fflush(NULL);
+    /* Determine the descriptor ceiling before fork (sysconf is not
+     * async-signal-safe while background workers exist). */
+    long descriptor_limit = sysconf(_SC_OPEN_MAX);
+    if (descriptor_limit < 0 || descriptor_limit > 4096) {
+        descriptor_limit = 4096;
+    }
     pid_t parent = getpid();
     pid_t pid = fork();
     if (pid < 0) {
@@ -102,6 +109,11 @@ static bool run_green(const char *exe, const char *dir, const char *libs, const 
 #else
         (void)parent;
 #endif
+        /* Keep the PDF reader away from MainUI's SQLite, input and theme
+         * descriptors; only stdin/stdout/stderr belong to the child. */
+        for (int fd = 3; fd < descriptor_limit; ++fd) {
+            close(fd);
+        }
         /* Do not inherit MainUI's signal handlers or masks into Green. */
         struct sigaction normal = {.sa_handler = SIG_DFL};
         sigemptyset(&normal.sa_mask);
@@ -165,6 +177,46 @@ static bool restore_display(MainUIApp *ui)
     SDL_Event stale[16];
     while (SDL_PeepEvents(stale, 16, SDL_GETEVENT, SDL_KEYDOWNMASK | SDL_KEYUPMASK) > 0) {
     }
+    /* Menu monitoring continues while Green runs. Remove only its stale
+     * release events; preserve unrelated worker notifications in order. */
+    SDL_Event *kept = NULL;
+    size_t saved = 0, capacity = 0;
+    bool overflow = false;
+    while (!overflow) {
+        int count = SDL_PeepEvents(stale, 16, SDL_GETEVENT, SDL_EVENTMASK(SDL_USEREVENT));
+        if (count <= 0) {
+            break;
+        }
+        for (int i = 0; i < count; i++) {
+            if (stale[i].user.code == MAINUI_MENU_RELEASE_CODE) {
+                continue;
+            }
+            if (saved == capacity) {
+                size_t next = capacity ? capacity * 2 : 16;
+                SDL_Event *more = next <= 256 ? realloc(kept, next * sizeof *kept) : NULL;
+                if (!more) {
+                    /* Low-memory fallback: don't lose a worker event. */
+                    SDL_PushEvent(&stale[i]);
+                    overflow = true;
+                    continue;
+                }
+                kept = more;
+                capacity = next;
+            }
+            kept[saved++] = stale[i];
+        }
+        /* SDL 1.2 queues at most 128 events; this also bounds unusual
+         * concurrent producers during reader shutdown. */
+        if (saved >= 128) {
+            break;
+        }
+    }
+    for (size_t i = 0; i < saved; ++i) {
+        SDL_PushEvent(&kept[i]);
+    }
+    free(kept);
+    ui->menu_events_seen = mainui_menu_button_events();
+    ui->quiet_l1_armed = ui->quiet_l1_held = false;
     memset(ui->held, 0, sizeof ui->held);
     ui->x_armed = ui->y_armed = ui->select_armed = ui->start_armed = false;
     ui->select_brightness = ui->return_latched = false;
@@ -186,7 +238,9 @@ void mainui_pdf_launch(MainUIApp *ui, const char *path)
         return;
     }
     bool had_audio = mainui_audio_available();
-    /* The media menu has already stopped gallery video and unhooked audio. */
+    /* Only tear down the previous backdrop when Green is actually available.
+     * A missing executable must leave the media menu untouched. */
+    mainui_media_suspend_for_pdf(&ui->details.media);
     /* The theme's Loading panel while Green starts, which takes seconds. It
      * is only drawn on the screen once, not kept anywhere: the first frame
      * after Green, drawn whole on a new screen, never shows it. */

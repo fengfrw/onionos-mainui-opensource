@@ -43,7 +43,9 @@ static void gallery_video_waits(void)
     SDL_Surface *screen =
         SDL_CreateRGBSurface(SDL_SWSURFACE, 640, 480, 32, 0xff0000, 0xff00, 0xff, 0);
     MainUIMediaViewer viewer = {0};
-    assert(screen && mainui_media_open(&viewer, root, rom, NULL, screen) && viewer.count == 2);
+    assert(screen &&
+           mainui_media_open(&viewer, root, rom, NULL, screen, NULL, MAINUI_MEDIA_START_GALLERY) &&
+           viewer.count == 2);
     assert(!viewer.video_pending && mainui_media_due(&viewer, SDL_GetTicks()) == -1);
     mainui_media_key(&viewer, SDLK_RIGHT, screen); /* to the video: it waits */
     Uint32 now = SDL_GetTicks();
@@ -55,6 +57,23 @@ static void gallery_video_waits(void)
     mainui_media_key(&viewer, SDLK_RIGHT, screen);
     mainui_media_key(&viewer, SDLK_ESCAPE, screen); /* closed: no start */
     assert(!viewer.open && !viewer.video_pending);
+    /* Back from the PDF reader, the menu Manual (PDF) was chosen in is
+     * closed: onto the gallery it was opened over, or Game Info. */
+    assert(mainui_media_open(&viewer, root, rom, NULL, screen, NULL, MAINUI_MEDIA_START_GALLERY));
+    int gallery = viewer.mode;
+    mainui_media_key(&viewer, SDLK_RCTRL, screen); /* Select: the menu */
+    assert(viewer.mode != gallery);
+    mainui_media_suspend_for_pdf(&viewer);
+    mainui_media_back_from_pdf(&viewer, screen);
+    assert(viewer.open && viewer.mode == gallery);
+    mainui_media_back_from_pdf(&viewer, screen); /* no menu: nothing */
+    assert(viewer.open && viewer.mode == gallery);
+    mainui_media_close(&viewer);
+    assert(mainui_media_open(&viewer, root, rom, NULL, screen, NULL, MAINUI_MEDIA_START_MENU) &&
+           mainui_media_over_details(&viewer));
+    mainui_media_suspend_for_pdf(&viewer);
+    mainui_media_back_from_pdf(&viewer, screen);
+    assert(!viewer.open);
     SDL_FreeSurface(screen);
     for (int i = 1; i >= 0; i--) {
         snprintf(path, sizeof path, "%s/%s", root, files[i]);

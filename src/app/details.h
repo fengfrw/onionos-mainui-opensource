@@ -30,6 +30,7 @@ typedef struct {
     /* For the media gallery: the ROM on this SD and its console's ROM folder
      * ("" when the console is not known). */
     char host_rom[MAINUI_PATH_MAX], rom_root[MAINUI_PATH_MAX];
+    char launch[MAINUI_PATH_MAX]; /* the game's launcher, a host path, "" for none */
     MainUIMediaViewer media;
 } MainUIDetails;
 
@@ -39,6 +40,10 @@ bool mainui_details_open(MainUIDetails *details, MainUICatalog *catalog,
 /* The ROM file of a list row's game, on this host, and its console's ROM
  * folder, found as Game Info finds them (the media folder is there). False
  * for folders and rows that are not games. */
+/* The game at row's ROM and launcher as host paths, without opening Game
+ * Info: false for a folder or a game without a launcher. */
+bool mainui_details_launcher(MainUICatalog *catalog, const MainUILibrary *library, int row,
+                             char host_rom[MAINUI_PATH_MAX], char launch[MAINUI_PATH_MAX]);
 bool mainui_details_locate(MainUICatalog *catalog, const MainUILibrary *library, int row,
                            char host_rom[MAINUI_PATH_MAX], char rom_root[MAINUI_PATH_MAX]);
 /* Up/Down wraps over games only and synchronizes the source list viewport.
@@ -55,10 +60,12 @@ void mainui_details_markers(MainUIDetails *details, const MainUILibrary *favorit
 /* Precompute layout before queued page navigation, even when a frame is skipped. */
 void mainui_details_prepare(MainUIDetails *details, MainUITheme *theme);
 void mainui_details_draw(MainUIDetails *details, MainUITheme *theme, SDL_Surface *screen);
-/* Right opens the game's media gallery when it has any (see media_viewer.h);
- * else it does nothing. */
-void mainui_details_media(MainUIDetails *details, const char *sd, SDL_Surface *screen,
-                          bool context_menu);
+/* Open the game's media as start says (MAINUI_MEDIA_START_*: Right's gallery,
+ * Select's menu, Left's Saved Games; see media_viewer.h), with the menu's
+ * order and Saved Games from options, NULL for neither. False, with nothing
+ * open, when the game has none of it. */
+bool mainui_details_media(MainUIDetails *details, const char *sd, SDL_Surface *screen, int start,
+                          const MainUIMediaOptions *options);
 /* Reset manual and automatic description scrolling on return from media. */
 void mainui_details_reset_scroll(MainUIDetails *details);
 /* UI-thread animation. Due returns -1 when idle. Hold freezes its clock for
