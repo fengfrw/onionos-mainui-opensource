@@ -133,6 +133,22 @@ cJSON *mainui_session_snapshot(MainUIMenuSection section, MainUICatalog *catalog
             char path[4096];
             ok = item &&
                  cJSON_AddStringToObject(item, "path", portable(path, catalog->sd, page->path));
+            /* Search's virtual folders have empty DB paths. The resolved
+             * filesystem path is identical for all of them, but their ppath
+             * (the displayed label) is the actual folder identity. */
+            if (ok && i > 1 && mainui_catalog_search_results(catalog) &&
+                !strcmp(page->path, catalog->pages[1].path)) {
+                const MainUICatalogPage *parent = &catalog->pages[i - 1];
+                int index = parent->view.selected - (i > 2);
+                const char *key = page->title;
+                if (index >= parent->offset && index < parent->offset + parent->loaded) {
+                    const MainUIEntry *folder = &parent->entries[index - parent->offset];
+                    if (folder->directory && folder->cache_key) {
+                        key = folder->cache_key;
+                    }
+                }
+                ok = cJSON_AddStringToObject(item, "folder_key", key) != NULL;
+            }
             if (ok) {
                 ok = attach(pages, NULL, item);
             }
@@ -147,6 +163,10 @@ cJSON *mainui_session_snapshot(MainUIMenuSection section, MainUICatalog *catalog
                 char path[4096];
                 ok = cJSON_AddStringToObject(root, "selected_path",
                                              portable(path, catalog->sd, selected->path)) != NULL;
+                if (ok && mainui_catalog_search_results(catalog) && selected->directory &&
+                    selected->stored_path && !*selected->stored_path && selected->cache_key) {
+                    ok = cJSON_AddStringToObject(root, "selected_key", selected->cache_key) != NULL;
+                }
                 if (!catalog->depth && selected->launch) {
                     ok = ok &&
                          cJSON_AddStringToObject(root, "selected_launch",
@@ -322,12 +342,15 @@ bool mainui_session_restore_control(MainUISession *out, const char *sd, bool sen
                 ok = false;
                 break;
             }
+            const char *folder_key = string(cJSON_GetArrayItem(pages, level), "folder_key");
             int found = -1;
             for (int row = 0; row < mainui_browser_count(pending.catalog); row++) {
                 MainUIEntry *entry = mainui_catalog_entry(
                     pending.catalog, mainui_browser_index(pending.catalog, row));
                 const char *value = entry ? (level == 1 ? entry->launch : entry->path) : NULL;
-                if (value && !strcmp(value, resolved)) {
+                if (value && !strcmp(value, resolved) &&
+                    (!*folder_key || (entry->directory && entry->cache_key &&
+                                      !strcmp(entry->cache_key, folder_key)))) {
                     found = row;
                     break;
                 }
@@ -369,16 +392,33 @@ bool mainui_session_restore_control(MainUISession *out, const char *sd, bool sen
                                        : string(resume, "selected_path");
             bool by_launch = !*string(record, "rompath") && !pending.catalog->depth &&
                              *string(resume, "selected_launch");
+            const char *selected_key = string(resume, "selected_key");
             if (*identity && mainui_catalog_path(resolved, sd, sd, identity)) {
+                int found = -1;
                 for (int row = 0; row < mainui_browser_count(pending.catalog); row++) {
                     MainUIEntry *entry = mainui_catalog_entry(
                         pending.catalog, mainui_browser_index(pending.catalog, row));
                     if (entry && (by_launch ? entry->launch : entry->path) &&
-                        !strcmp(by_launch ? entry->launch : entry->path, resolved)) {
-                        mainui_viewport_move(&pending.view, visible_rows,
-                                             row - pending.view.selected, false);
+                        !strcmp(by_launch ? entry->launch : entry->path, resolved) &&
+                        (!*selected_key || (entry->directory && entry->cache_key &&
+                                            !strcmp(entry->cache_key, selected_key)))) {
+                        found = row;
                         break;
                     }
+                }
+                /* Older handoffs have no virtual-folder key. If multiple
+                 * folders share a path, preserve the original selected row. */
+                if (found < 0 && *selected_key) {
+                    int row = selected_view.selected;
+                    MainUIEntry *entry = mainui_catalog_entry(
+                        pending.catalog, mainui_browser_index(pending.catalog, row));
+                    if (entry && entry->path && !strcmp(entry->path, resolved)) {
+                        found = row;
+                    }
+                }
+                if (found >= 0) {
+                    mainui_viewport_move(&pending.view, visible_rows, found - pending.view.selected,
+                                         false);
                 }
             }
             /* A ROM or app list may have shrunk while away; the console grid

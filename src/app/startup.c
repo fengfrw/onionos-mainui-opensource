@@ -339,16 +339,28 @@ int mainui_setup_video(MainUIApp *ui)
 
 /* The return from a launch of Onion's Search tool (search, clear, or its
  * settings), as opposed to a game Search found. */
-static bool search_tool_return(const cJSON *record)
+static const char *search_action(const cJSON *record)
 {
     const cJSON *tool = cJSON_GetObjectItemCaseSensitive(record, "launch");
     const cJSON *rom = cJSON_GetObjectItemCaseSensitive(record, "rompath");
     return cJSON_IsString(tool) && cJSON_IsString(rom) &&
-           !strcmp(tool->valuestring, "/mnt/SDCARD/App/Search/launch.sh") &&
-           (!strcmp(rom->valuestring, tool->valuestring) || !strcmp(rom->valuestring, "search") ||
-            !strcmp(rom->valuestring, "clear") || !strncmp(rom->valuestring, "setstate:", 9) ||
-            strstr(rom->valuestring, "/App/Search/data/") ||
-            cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(record, "app_action")));
+                   !strcmp(tool->valuestring, "/mnt/SDCARD/App/Search/launch.sh")
+               ? rom->valuestring
+               : NULL;
+}
+
+static bool search_setstate_return(const cJSON *record)
+{
+    const char *rom = search_action(record);
+    return rom && !strncmp(rom, "setstate:", 9);
+}
+
+static bool search_tool_return(const cJSON *record)
+{
+    const char *rom = search_action(record);
+    return rom && (!strcmp(rom, "/mnt/SDCARD/App/Search/launch.sh") || !strcmp(rom, "search") ||
+                   !strcmp(rom, "clear") || strstr(rom, "/App/Search/data/") ||
+                   cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(record, "app_action")));
 }
 
 /* The stock state.json, which stock MainUI follows when it starts. Onion's
@@ -358,9 +370,10 @@ static bool search_tool_return(const cJSON *record)
  * system found by its data folder (empty unless the last screen is a console
  * list). Onion's setState, run at boot for the startup tab and by its Expert
  * app, leaves the main menu and one tab. Returns that tab, or -1. */
-static int stock_state_read(const char *directory, char label[256])
+static int stock_state_read(const char *directory, char label[256], int *console_type)
 {
     label[0] = 0;
+    *console_type = 0;
     char path[4096];
     if (snprintf(path, sizeof path, "%s/state.json", directory) >= (int)sizeof path) {
         return -1;
@@ -371,9 +384,13 @@ static int stock_state_read(const char *directory, char label[256])
     int count = cJSON_GetArraySize(list);
     const cJSON *last = cJSON_GetArrayItem(list, count - 1);
     const cJSON *type = cJSON_GetObjectItemCaseSensitive(last, "type");
-    const cJSON *name = cJSON_GetObjectItemCaseSensitive(last, "emuname");
-    if (cJSON_IsNumber(type) && type->valueint == 5 && cJSON_IsString(name)) {
+    int last_type = cJSON_IsNumber(type) ? type->valueint : -1;
+    const cJSON *name =
+        cJSON_GetObjectItemCaseSensitive(last, last_type == 17 ? "raname" : "emuname");
+    if (count == 3 && (last_type == 5 || last_type == 17) && cJSON_IsString(name) &&
+        *name->valuestring && strlen(name->valuestring) < 256) {
         snprintf(label, 256, "%s", name->valuestring);
+        *console_type = last_type;
     }
     /* setState's page types, in stock's numbering. */
     static const int types[] = {10, 2, 1, 16, 3};
@@ -408,6 +425,99 @@ static bool same_label(const char *a, const char *b)
         lb--;
     }
     return la == lb && !strncmp(a, b, la);
+}
+
+/* Search's "Missing caches" rows ask setState to open an emulator's ROM
+ * list. The return envelope is for the Search tool, but that request is not
+ * a normal Search return: follow its three-frame state.json instead. Validate
+ * both the state and the requested emulator directory before switching pages. */
+static bool follow_search_setstate(MainUIApp *ui, const cJSON *record, int type, const char *label)
+{
+    const char *action = search_action(record);
+    if (!action || strncmp(action, "setstate:", 9) || !*label || (type != 5 && type != 17)) {
+        return false;
+    }
+    const char *path = action + 9;
+    const char *separator = strrchr(path, ':');
+    if (!separator || separator == path || !separator[1] || !same_label(label, separator + 1)) {
+        return false;
+    }
+    char raw[MAINUI_PATH_MAX], directory[MAINUI_PATH_MAX];
+    size_t length = (size_t)(separator - path);
+    if (length >= sizeof raw) {
+        return false;
+    }
+    memcpy(raw, path, length);
+    raw[length] = 0;
+    if (!mainui_catalog_path(directory, ui->sd, ui->sd, raw)) {
+        return false;
+    }
+    MainUICatalog *catalog = calloc(1, sizeof *catalog);
+    if (!catalog) {
+        return false;
+    }
+    bool ok = type == 17 ? mainui_catalog_expert(catalog, ui->sd, ui->config.case_sensitive)
+                         : mainui_catalog_open(catalog, ui->sd, ui->config.case_sensitive);
+    int index = -1;
+    for (int i = 0; ok && i < catalog->pages[0].count; ++i) {
+        const MainUIEntry *entry = &catalog->pages[0].entries[i];
+        /* setstate names the console's Emu or RApp folder, the one holding
+         * its config.json; its path is its ROM folder. */
+        const char *slash = entry->config ? strrchr(entry->config, '/') : NULL;
+        size_t folder = slash ? (size_t)(slash - entry->config) : 0;
+        if (slash && strlen(directory) == folder && !strncmp(entry->config, directory, folder) &&
+            same_label(entry->label, label)) {
+            index = i;
+            break;
+        }
+    }
+    MainUIViewport view = {0};
+    if (index >= 0) {
+        mainui_browser_grid_restore(catalog, &view, index);
+        ok = mainui_browser_enter(catalog, &view, ui->config.rows);
+    }
+    else {
+        ok = false;
+    }
+    if (!ok) {
+        mainui_catalog_close(catalog);
+        free(catalog);
+        return false;
+    }
+
+    if (ui->library == ui->search.results) {
+        ui->library = NULL;
+    }
+    mainui_search_close(&ui->search);
+    if (ui->library) {
+        mainui_library_close(ui->library);
+        free(ui->library);
+        ui->library = NULL;
+    }
+    if (ui->apps) {
+        mainui_catalog_close(ui->apps);
+        free(ui->apps);
+        ui->apps = NULL;
+    }
+    MainUICatalog **target = type == 17 ? &ui->expert : &ui->games;
+    if (*target) {
+        mainui_catalog_close(*target);
+        free(*target);
+    }
+    *target = ui->catalog = catalog;
+    if (type == 17) {
+        ui->expert_view = view;
+    }
+    else {
+        ui->games_view = view;
+    }
+    ui->view = view;
+    ui->home = ui->settings_open = false;
+    ui->cached_start = -1;
+    ui->preview_sync_once = true;
+    fprintf(stderr, "[return] Search setstate opened %s: %s\n", type == 17 ? "Expert" : "Games",
+            label);
+    return true;
 }
 
 void mainui_restore_session(MainUIApp *ui)
@@ -467,7 +577,9 @@ void mainui_restore_session(MainUIApp *ui)
         cJSON *returned = mainui_launch_take_return(ui->handoff_dir);
         /* A restored catalog is read fresh from the SD card, so it already has
          * the Games -> Search that Search created while MainUI was away. */
-        bool from_search = search_tool_return(cJSON_GetObjectItemCaseSensitive(returned, "record"));
+        const cJSON *return_record = cJSON_GetObjectItemCaseSensitive(returned, "record");
+        bool setstate = search_setstate_return(return_record);
+        bool from_search = search_tool_return(return_record);
         /* No envelope: MainUI was killed, not left through its own launch. */
         char stock_label[256] = "";
         /* A launch still pending owns the state.json written for it: it is
@@ -479,8 +591,9 @@ void mainui_restore_session(MainUIApp *ui)
                      snprintf(pending_path, sizeof pending_path, "%s/cmd_to_run.sh",
                               ui->handoff_dir) < (int)sizeof pending_path;
         bool idle = paths && lstat(pending_path, &pending) != 0 && errno == ENOENT;
-        int stock_tab = idle ? stock_state_read(ui->handoff_dir, stock_label) : -1;
-        if (returned) {
+        int stock_type = 0;
+        int stock_tab = idle ? stock_state_read(ui->handoff_dir, stock_label, &stock_type) : -1;
+        if (returned && !setstate) {
             stock_label[0] = 0;
         }
         MainUISession restored = {0};
@@ -566,6 +679,12 @@ void mainui_restore_session(MainUIApp *ui)
         }
         else if (!ui->home && !ui->library && cJSON_IsString(query)) {
             fprintf(stderr, "[return] the Search results could not be reopened\n");
+        }
+        /* A Missing caches action leaves the target console as the last
+         * state.json frame. Do not treat it as an ordinary Search return. */
+        if (setstate && idle && stock_type &&
+            !follow_search_setstate(ui, return_record, stock_type, stock_label)) {
+            fprintf(stderr, "[return] Search setstate destination unavailable\n");
         }
         /* After Search started by keymon: only if the stock state names the
          * console that is the Search system. */
