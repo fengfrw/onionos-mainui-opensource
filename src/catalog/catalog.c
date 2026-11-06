@@ -422,9 +422,11 @@ static bool visit(MainUICatalogPage *page, const char *sd, const char *name, boo
         cJSON_Delete(json);
         return ok;
     }
-    /* Box art and manuals live beside the ROMs; neither folder is a ROM
-     * folder. Names are matched without regard to case. */
+    /* Box art, manuals and Game Info's media (covers, 3D boxes, screenshots
+     * and videos) live beside the ROMs; none of these folders is a ROM folder.
+     * Names are matched without regard to case. */
     if (directory && (!compare_text(name, "Imgs", false) || !compare_text(name, "Manuals", false) ||
+                      !compare_text(name, "media", false) ||
                       !compare_text(scratch->path, page->images, false))) {
         return true;
     }

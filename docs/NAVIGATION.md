@@ -111,7 +111,7 @@ Roms/GB/
 The folders are named as [Skraper](https://www.skraper.net/) names them by default, so the media it downloads can be copied to the SD card as it comes, its `media` folder beside the ROMs.
 Numbered screenshots stop at the first missing number from `-2` on: a missing `-1` does not end them, so screenshots numbered from `-2` show too.
 On the SD card's FAT the folder names match in any case; elsewhere they must be lowercase, as above. A game in a subfolder uses the same `media` folder, at the console's ROM folder. The console is found as for Game Info, so the gallery works from ROM lists, Favorites, Recents and Search results, also for consoles that share a ROM folder.
-Only these files are looked for, when the gallery opens; nothing is scanned.
+Only these files are looked for, when the gallery opens; nothing is scanned. A `media` folder, in any case and at any depth, is never listed as a ROM folder, nor anything in it, as for `Imgs` (see [CATALOG_CACHE.md](CATALOG_CACHE.md#differences-from-stock)).
 
 Images are scaled to fit the screen, keeping their shape, on black. A counter such as `2/5` shows at the bottom right when there is more than one item.
 Videos play without sound as soon as they are shown, and repeat. They use the FFmpeg libraries Onion already has for its video player, in `.tmp_update/lib/parasyte`, loaded from there only while a video plays, so MainUI starts without them.

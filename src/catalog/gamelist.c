@@ -488,6 +488,19 @@ static bool metadata_game(Import *import)
     return true;
 }
 
+/* "media" in any case, as the five characters at name. */
+static bool media_name(const char *name)
+{
+    static const char word[] = "media";
+    for (int i = 0; i < 5; i++) {
+        char ch = name[i];
+        if ((ch >= 'A' && ch <= 'Z' ? ch - 'A' + 'a' : ch) != word[i]) {
+            return false;
+        }
+    }
+    return true;
+}
+
 static bool import_game(Import *import)
 {
     if (++import->records > (import->metadata ? 32768u : 1000000u)) {
@@ -530,6 +543,13 @@ static bool import_game(Import *import)
     int depth = 0;
     for (const char *slash = strchr(relative, '/'); slash; slash = strchr(slash + 1, '/')) {
         if (++depth >= MAINUI_STACK_MAX - 1) {
+            return true;
+        }
+    }
+    /* A game in a media folder (Game Info's gallery), at any depth and in
+     * any case, is left out, as a scan leaves the folder out. */
+    for (const char *part = relative, *slash; (slash = strchr(part, '/')); part = slash + 1) {
+        if (slash - part == 5 && media_name(part)) {
             return true;
         }
     }
