@@ -31,6 +31,24 @@ int mainui_suite_core(void)
           c.scroll_speed == 5);
     mainui_config_parse(&c, "999999999999999999999999999", NULL, NULL, NULL);
     CHECK(c.rows == 20);
+    /* A third scroll value: "bounce" bounces; "rolling", nothing or anything
+     * else rolls. Delay and speed parse exactly as before. */
+    const char *bounce[] = {"700,120,bounce", "700 120 bounce\n", "700,120, ,BOUNCE",
+                            "700,120,bounce,later"};
+    for (size_t i = 0; i < sizeof bounce / sizeof *bounce; ++i) {
+        mainui_config_parse(&c, NULL, NULL, NULL, bounce[i]);
+        CHECK(c.scroll_bounce && c.scroll_status == 2 && c.scroll_delay == 700 &&
+              c.scroll_speed == 120);
+    }
+    const char *rolling[] = {"700,120",      "700,120,rolling", "700,120bounce",  "700,120,bounced",
+                             "700,120,boun", "700,120;bounce",  "700,120\tbounce"};
+    for (size_t i = 0; i < sizeof rolling / sizeof *rolling; ++i) {
+        mainui_config_parse(&c, NULL, NULL, NULL, rolling[i]);
+        CHECK(!c.scroll_bounce && c.scroll_status == 2 && c.scroll_delay == 700 &&
+              c.scroll_speed == 120);
+    }
+    mainui_config_parse(&c, NULL, NULL, NULL, "bounce");
+    CHECK(!c.scroll_bounce && c.scroll_status == 1);
     CHECK(mainui_device(285).lid && !mainui_device(354).lid && !mainui_device(999).axp);
     MainUIViewport v;
     mainui_viewport_restore(&v, 0, 10, 30, 20, 29);
@@ -148,6 +166,63 @@ int mainui_suite_core(void)
         }
     }
     CHECK(mainui_marquee_pixels(UINT32_MAX, 400) == (uint64_t)(UINT32_MAX / 40) * 16);
+    /* Bounce rests as long as 84 px take at its speed, 400 ms to 2 s, in
+     * whole 40 ms frames: 720 ms at 120 px/s, longer slower, shorter faster. */
+    CHECK(mainui_marquee_bounce_rest(120) == 18 && mainui_marquee_bounce_rest(50) == 42);
+    CHECK(mainui_marquee_bounce_rest(80) == 27 && mainui_marquee_bounce_rest(200) == 11);
+    CHECK(mainui_marquee_bounce_rest(400) == 10 && mainui_marquee_bounce_rest(5) == 50);
+    CHECK(mainui_marquee_bounce_rest(0) == 0);
+    for (int speed = 5; speed <= 400; speed += 7) {
+        int full = (int)mainui_marquee_step_pixels(1, speed);
+        int rest = mainui_marquee_bounce_rest(speed);
+        for (int distance = 1; distance <= 700; distance += 37) {
+            /* One leg out and back, frame by frame. */
+            static int at[20000];
+            int frames = 0;
+            for (uint64_t t = 0; frames < 20000; t += MAINUI_MARQUEE_FRAME_MS) {
+                at[frames] = mainui_marquee_bounce(t, speed, distance);
+                CHECK(at[frames] >= 0 && at[frames] <= distance);
+                frames++;
+                if (frames > 2 && at[frames - 1] && !at[frames - 2] && at[frames - 3] == 0 &&
+                    frames > rest + 4) {
+                    break; /* out again */
+                }
+            }
+            CHECK(frames < 20000);
+            /* Out only, rest at the far end, back only, rest at the start. */
+            int turn = 0;
+            while (turn < frames && at[turn] < distance) {
+                turn++;
+            }
+            int far = 0, near = 0;
+            for (int f = 1; f < frames - 1; f++) {
+                CHECK(f <= turn ? at[f] >= at[f - 1] : at[f] <= at[f - 1] || at[f - 1] == 0);
+                far += at[f] == distance;
+                near += f > turn && at[f] == 0;
+            }
+            /* Easing may hold an end longer: by up to its 6 frames, or at
+             * the slowest speeds (under a pixel a frame) half a way. */
+            int extra = full ? 7 : 12;
+            CHECK(far >= rest && far <= rest + extra && near >= rest - 1 && near <= rest + extra);
+            /* Never more than a full step at once; the first and last steps
+             * of a way are small; a long way runs at full speed. */
+            int largest = 0, first = -1, last = 0;
+            for (int f = 1; f <= turn; f++) {
+                int step = at[f] - at[f - 1];
+                CHECK(step <= (full > 1 ? full : 1) + 1);
+                largest = step > largest ? step : largest;
+                if (step && first < 0) {
+                    first = step;
+                }
+                last = step ? step : last;
+            }
+            CHECK(first <= (full + 1) / 2 + 1 && last <= (full + 1) / 2 + 1);
+            if (full > 1 && distance >= 4 * 6 * full) {
+                CHECK(largest == full);
+            }
+        }
+    }
+    CHECK(mainui_marquee_bounce(UINT64_MAX, 400, 30000) >= 0);
     /* Failed parsing must leave the caller's prior state byte-for-byte intact. */
     MainUIStack state = {.count = 1}, before = state;
     CHECK(!mainui_state_parse("{\"list\":[{\"title\":1}]}", &state));

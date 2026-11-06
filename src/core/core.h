@@ -23,6 +23,9 @@ typedef struct {
     int rows, row_height, font_size;
     int repeat_delay, repeat_interval;
     int scroll_status, scroll_delay, scroll_speed;
+    /* A long selected title travels to its end, pauses and travels back,
+     * instead of rolling round: a third .romListTitleScroll value "bounce". */
+    bool scroll_bounce;
     bool case_sensitive, dynamic_favorite_position, show_recents, show_expert;
     /* Shorten context menu labels too wide for the popup with "...". On
      * unless .noContextMenuEllipsis exists. */
@@ -95,6 +98,22 @@ uint64_t mainui_marquee_pixels(uint64_t moving_ms, int speed);
 uint64_t mainui_marquee_step_pixels(uint64_t frames, int speed);
 int mainui_marquee_stream(uint64_t elapsed_ms, int speed, int title_width, int draw_width,
                           MainUIBlit out[2]);
+/* Bounce scrolling rests at each end of the title as long as scrolling this
+ * far takes at its speed, within these bounds, in whole marquee frames:
+ * 720 ms at 120 px/s. */
+#define MAINUI_MARQUEE_BOUNCE_REST_PX 84
+#define MAINUI_MARQUEE_BOUNCE_REST_MIN_MS 400
+#define MAINUI_MARQUEE_BOUNCE_REST_MAX_MS 2000
+/* Each way speeds up from rest and slows into the end over about this. */
+#define MAINUI_MARQUEE_BOUNCE_EASE_MS 240
+#define MAINUI_PI 3.14159265358979323846
+/* The rest at each end, in marquee frames; 0 for no speed. */
+int mainui_marquee_bounce_rest(int speed);
+/* Bounce offset, 0..distance, after moving_ms of scrolling: ease out to
+ * distance, rest, ease back, rest, repeat, at the marquee's own step at full
+ * speed. distance is the title width less the visible width; 0 when it is
+ * not positive or speed is not. */
+int mainui_marquee_bounce(uint64_t moving_ms, int speed, int distance);
 /* True when the first strong character of a UTF-8 title is Hebrew or Arabic:
  * its scrolling title moves the other way. Digits, spaces and ASCII
  * punctuation are skipped; any other letter or symbol reads left to right. */

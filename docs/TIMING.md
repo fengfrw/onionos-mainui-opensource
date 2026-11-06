@@ -80,6 +80,9 @@ From 25 px/s up, the configured speed is rounded to a whole number of pixels per
 | 38-62 | 50 | 2 px per frame |
 | 25n - 12 to 25n + 12 | 25n | n px per frame, up to 400 px/s (16 px) |
 
+A bouncing title (`bounce` as the third `.romListTitleScroll` value) takes the same steps at full speed, easing in and out over 6 frames (240 ms) at each end of a way, with smaller steps there.
+It rests at each end for 84 px at its speed, 400 ms to 2 s, in whole frames (18 frames, 720 ms, at 120 px/s; 10 at 400 px/s; 42 at 50 px/s), and keeps the paced frames while it rests.
+
 During the scroll delay (up to 30 s)
 the normal maintenance ticks continue; the loop wakes when the title starts to
 move and only then switches to paced frames. Letter-jump work retains 17 ms wakes. Workers wake the UI

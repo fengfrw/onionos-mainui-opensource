@@ -62,6 +62,11 @@ An empty file named `.appsort` in `.tmp_update/config` sorts them by name instea
 
 The window scrolls only as far as needed to keep the selected row on screen. A row that is already visible never moves the window.
 
+A selected title too long for its row scrolls when `.tmp_update/config/.romListTitleScroll` holds a delay and a speed, such as `700,120` (700 ms, then 120 px/s). It rolls round, its start following its end after a gap.
+A third value, `700,120,bounce`, makes it bounce instead: after the delay it travels until its end shows, rests there, travels back, rests again, and repeats.
+Each way speeds up smoothly from rest and slows into the end, over about a quarter of a second, and runs at the set speed in between. The rest lasts as long as scrolling 84 px takes at that speed, at least 400 ms and at most 2 s: 720 ms at 120 px/s.
+With a cover shown, its end stops at the cover's edge. A title starting with Hebrew or Arabic starts at its right end and moves the other way. `rolling`, nothing or any other third value rolls, as before.
+
 ## When a list changes
 
 Edits change the list under the window: Create, Rename, Sort, Delete, Move and Paste in Favorites, removing a Favorite or Recent, and deleting a ROM. After an edit:

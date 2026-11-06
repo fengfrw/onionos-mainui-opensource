@@ -54,6 +54,29 @@ static size_t bounded_length(const char *s, size_t max)
     return n;
 }
 
+/* The optional third value after the speed: "rolling" (the default) or
+ * "bounce", after at least one comma or space. Anything else rolls, as every
+ * earlier version did with whatever followed the speed. */
+static bool scroll_style_bounce(const char *text, size_t length)
+{
+    static const char word[] = "bounce";
+    size_t pos = 0;
+    while (pos < length && (text[pos] == ',' || text[pos] == ' ')) {
+        pos++;
+    }
+    if (!pos || length - pos < sizeof word - 1) {
+        return false;
+    }
+    for (size_t i = 0; i < sizeof word - 1; i++) {
+        char ch = text[pos + i];
+        if ((ch >= 'A' && ch <= 'Z' ? ch - 'A' + 'a' : ch) != word[i]) {
+            return false;
+        }
+    }
+    pos += sizeof word - 1;
+    return pos == length || whitespace(text[pos]) || text[pos] == ',';
+}
+
 void mainui_config_parse(MainUIConfig *out, const char *rows, const char *font, const char *repeat,
                          const char *scroll)
 {
@@ -105,7 +128,8 @@ void mainui_config_parse(MainUIConfig *out, const char *rows, const char *font, 
         }
         /* Match the patcher's model: the second sign/digit immediately follows separators. */
         if (first && pos > separator && pos < length && !whitespace(scroll[pos])) {
-            int speed = integer(scroll + pos, length - pos, NULL, &second);
+            size_t used;
+            int speed = integer(scroll + pos, length - pos, &used, &second);
             if (second) {
                 out->scroll_delay = delay;
                 out->scroll_speed = speed;
@@ -114,6 +138,7 @@ void mainui_config_parse(MainUIConfig *out, const char *rows, const char *font, 
                     out->scroll_delay = clamp(delay, 10, 30000);
                     out->scroll_speed = clamp(speed, 5, 400);
                 }
+                out->scroll_bounce = scroll_style_bounce(scroll + pos + used, length - pos - used);
             }
         }
     }

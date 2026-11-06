@@ -382,13 +382,28 @@ static void draw_list_row(MainUIApp *ui, int i, Uint32 elapsed)
     if (selected && ui->config.scroll_status == 2 && elapsed >= (unsigned)ui->config.scroll_delay &&
         label->w > activation_width) {
         MainUIBlit segments[2];
+        bool instant = ui->snapshot || ui->marquee_origin != ui->selected_at;
+        if (ui->config.scroll_bounce) {
+            /* Travel until the end of the title meets the edge of the lane
+             * (the cover's edge when one is shown), pause, and come back. A
+             * right-to-left title starts at its right end and moves the
+             * other way. Paced frames count whole frame periods, as below. */
+            uint64_t moving = instant ? elapsed - (unsigned)ui->config.scroll_delay
+                                      : (uint64_t)ui->marquee_steps * MAINUI_MARQUEE_FRAME_MS;
+            int distance = label->w - activation_width;
+            int position = mainui_marquee_bounce(moving, ui->config.scroll_speed, distance);
+            SDL_Rect source = {(Sint16)(ui->label_rtl[i] ? distance - position : position), 0,
+                               (Uint16)available, (Uint16)label->h};
+            SDL_Rect dest = {(Sint16)text_x, (Sint16)label_y, 0, 0};
+            SDL_BlitSurface(label, &source, ui->screen, &dest);
+            return;
+        }
         /* One whole-pixel step per paced frame, so a late frame never jumps twice.
          * Snapshots render a given instant. 1000 px/s maps pixels to ms exactly. */
         uint64_t offset =
-            ui->snapshot || ui->marquee_origin != ui->selected_at
-                ? mainui_marquee_pixels(elapsed - (unsigned)ui->config.scroll_delay,
-                                        ui->config.scroll_speed)
-                : mainui_marquee_step_pixels(ui->marquee_steps, ui->config.scroll_speed);
+            instant ? mainui_marquee_pixels(elapsed - (unsigned)ui->config.scroll_delay,
+                                            ui->config.scroll_speed)
+                    : mainui_marquee_step_pixels(ui->marquee_steps, ui->config.scroll_speed);
         /* A right-to-left title starts from its right end, where it begins,
          * and moves right: the same strip of title and gap, walked back. */
         if (ui->label_rtl[i]) {
