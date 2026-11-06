@@ -176,7 +176,7 @@ With a cover shown, its end stops at the cover's edge. A title starting with Heb
 
 ### Video previews
 
-With a file named `.romListVideoPreview` in `.tmp_update/config`, a game that stays selected in a ROM list, Favorites, Recents or Search results plays its video in place of its cover: the gallery's `media/videos/<name>.mp4` ([below](#game-infos-media-gallery)), silently and repeating, fitted to the cover's 250x360 area.
+With a file named `.romListVideoPreview` in `.tmp_update/config`, a game that stays selected in a ROM list, Favorites, Recents or Search results plays its video in place of its cover: the gallery's video in `media/videos` ([below](#game-infos-media-gallery)), silently and repeating, fitted to the cover's 250x360 area.
 The file holds the delay in milliseconds and the mode, separated by a comma or spaces: `1500`, `800,cover` or `800,fullscreen`. Without a delay it is 1000 ms, so an empty file is `1000,cover`; delays are kept within 0 to 30000, and to at least 100 for `fullscreen`. Without the file nothing plays, as before.
 Scrolling past games plays nothing: a video starts only once its game has been selected for the whole delay, and it stops, showing the cover again, as soon as the selection moves or anything opens over the list (Game Info, a menu, a message or Search). It stops while the device sleeps and starts again on waking.
 A game without a video, or a video that cannot be played, keeps its cover, without a message. A game with a video but no cover shows the video where the cover would be, and titles stop at its edge as at a cover's.
@@ -214,15 +214,15 @@ Apps are added and removed with the context menu, as before, or with `fav` as th
 L2 and R2 move Game Info's description a page at a time, as before. With a file named `.gameInfoAutoScroll` in `.tmp_update/config`, the description also scrolls down on its own, pixel by pixel, once a game's Game Info has shown for a delay, and stops at its last full page.
 The file holds the delay in milliseconds and the speed in pixels per second, separated by a comma or spaces: `1500,30`. Empty, it is `2000,20`. Delays are kept within 0 to 30000 and speeds within 5 to 150. A delay that is not a number keeps both defaults, and a speed that is not one keeps its own.
 Before the scrolling starts, L2 or R2 moves a page at once and the scrolling no longer starts. Once it moves, the first L2 or R2 press only stops it where it is, also when held; the next presses move a page from there as before.
-A message, the context menu, the gallery and sleep pause it, and it goes on after them. Up and Down show another game, whose description starts again after the delay.
+A message, the context menu and sleep pause it, and it goes on after them. Opening the gallery or the media menu stops it and puts the description back at the top, where it starts again after the delay on return. Up and Down show another game, whose description starts again after the delay.
 Only the description scrolls. Without the file Game Info is as before.
 
 ## Game Info's media gallery
 
-Right in Game Info opens a fullscreen gallery of the game's media, when it has any; otherwise Right does nothing there. Right shows the next item, and on the last one does nothing, and Left the previous one; Left on the first item goes back to Game Info, as B does from any item.
+Right in Game Info opens a fullscreen gallery of the game's media, when it has any, and only the gallery: without gallery items Right does nothing there, and Select opens the [media menu](#media-menu-maps-and-manuals) for maps and manuals. Right shows the next item, and on the last one does nothing, and Left the previous one; Left on the first item goes back to Game Info, as B does from any item.
 A video starts once it has been shown for 100 ms, so moving past it with Right or Left starts nothing. On a video, A pauses it (a pause sign shows at the bottom left) and plays it on, and L and R jump about 5 seconds back and forward; paused, it stays paused there.
 A jump lands on a keyframe, a picture the video can start from, and shows it at once: forward the first one at least 5 seconds on, back the last one at least 5 seconds back, so it can go further than 5 seconds; past the last one the video starts again.
-Videos with a keyframe every second or two, such as `ffmpeg -g 30` makes at 30 frames per second, jump closest to 5 seconds. While the device sleeps a video stands still, and on waking it goes on from there. Other buttons do nothing in the gallery, and the X and Y shortcuts do not act there.
+Videos with a keyframe every second or two, such as `ffmpeg -g 30` makes at 30 frames per second, jump closest to 5 seconds. While the device sleeps a video stands still, and on waking it goes on from there. Select opens the media menu over the gallery. Other buttons do nothing in the gallery, and the X and Y shortcuts do not act there.
 
 The media is in a `media` folder in the console's ROM folder, beside `Imgs`, under the ROM file's name without its extension (not the game's title). Every folder is optional. In this order:
 
@@ -239,13 +239,20 @@ Roms/GB/
     │   ├── Game.png
     │   ├── Game-1.png
     │   └── Game-2.png        and on, up to 20 screenshots
-    └── videos/Game.mp4       video
+    ├── videos/Game.mp4       video
+    ├── maps/
+    │   ├── Game.png          maps, below; not in the gallery
+    │   └── Game-1.png
+    └── manuals/
+        ├── Game.txt          walkthrough
+        └── Game.pdf          manual
 ```
 
 The folders are named as [Skraper](https://www.skraper.net/) names them by default, so the media it downloads can be copied to the SD card as it comes, its `media` folder beside the ROMs.
 Numbered screenshots stop at the first missing number from `-2` on: a missing `-1` does not end them, so screenshots numbered from `-2` show too.
 On the SD card's FAT the folder names match in any case; elsewhere they must be lowercase, as above. A game in a subfolder uses the same `media` folder, at the console's ROM folder. The console is found as for Game Info, so the gallery works from ROM lists, Favorites, Recents and Search results, also for consoles that share a ROM folder.
-Only these files are looked for, when the gallery opens; nothing is scanned. A `media` folder, in any case and at any depth, is never listed as a ROM folder, nor anything in it, as for `Imgs` (see [CATALOG_CACHE.md](CATALOG_CACHE.md#differences-from-stock)).
+Only these files are looked for, when the gallery opens. The `videos` folder is read only when `Game.mp4` is not there: a video can also be `.mkv`, `.avi`, `.mov`, `.webm` or `.m4v`, its extension in any case, and with more than one the first in that order plays. The `maps` folder is read for the game's maps, their names in any case.
+A `media` folder, in any case and at any depth, is never listed as a ROM folder, nor anything in it, as for `Imgs` (see [CATALOG_CACHE.md](CATALOG_CACHE.md#differences-from-stock)).
 
 Images are scaled to fit the screen, keeping their shape, on black. A counter such as `2/5` shows at the bottom right when there is more than one item.
 Videos play as soon as they are shown, and repeat. They use the FFmpeg libraries Onion already has for its video player, in `.tmp_update/lib/parasyte`, loaded from there only while a video plays, so MainUI starts without them.
@@ -253,6 +260,21 @@ Without them, or for a file they cannot play, the gallery says so instead.
 A video's sound plays in place of the theme's music, which goes on when the video is left, at the device's volume rather than the menu music's. It plays without gaps, and the picture follows it, within about 50 ms.
 Sound and pictures are read ahead of each other, so files that store their sound in blocks some way from its pictures (as MP4Box does) play smoothly too.
 A video without sound, or whose sound cannot be decoded, plays silently; so do videos when the theme's music cannot play (no SDL_mixer). H.264 MP4 files of about 320x240 at 15 to 30 frames per second suit the Miyoo Mini; videos over 1280x720 are not played.
+
+### Media menu, maps and manuals
+
+Select in Game Info, for a game with any media, opens a menu in the theme's context-menu style over Game Info: Gallery, Game Maps, Walkthrough (TXT) and Manual (PDF), each only when the game has it. Up and Down move round it, A opens the row, and B or Select closes it. For a game without media Select does nothing there.
+Select in the gallery, a map or the walkthrough opens the same menu over it, with Game Info as its first row and without the one shown; B or Select goes back to it as it was, a video paused by the menu playing on from where it stopped.
+B in the gallery, a map or the walkthrough goes back to Game Info, and B there back to the list, as before. No titles or button hints show in the gallery, the maps or the walkthrough.
+
+Maps are PNG pictures in `media/maps`, named after the ROM file: `Game.png`, then `Game-1.png`, `Game-2.png` and on, in number order, up to 32. JPEG and BMP maps and the older `Game_map1.png` names are not shown.
+A map shows fitted to the screen, with which one it is, such as `2/3`, at the bottom right. L and R show the previous and next map, round the ends.
+R2 shows the map at its own size, up to 2000 pixels a side, where the D-pad moves round it, and L2 fits it again; A switches between the two.
+
+The walkthrough is `media/manuals/Game.txt`, UTF-8 (other bytes show as `?`), of which the first 2 MiB are read. It shows in the theme's Game Info font, wrapped at words, with the number of its top line at the bottom left: Up and Down move a line, L and R 15 lines, L2 and R2 75.
+A searches it: the keyboard opens with the last search, and its OK looks for that text from the page shown, A to Z in any case, going round from the start. The line found goes to the top, every match on the page marked; Start finds the next one. When there is none, `Not found` shows for 2 seconds in place of the line number.
+The manual is `media/manuals/Game.pdf`, opened in Onion's PDF reader, Green (`.tmp_update/bin/green/green`, with its libraries in `.tmp_update/lib/parasyte`), which MainUI does not install. While Green shows it MainUI hands over the screen and sound, and takes them back after; B in Green closes it. Without Green the menu says so.
+As for the gallery, the folder and file names match in any case on the SD card's FAT, and must be as above elsewhere.
 
 ## When a list changes
 

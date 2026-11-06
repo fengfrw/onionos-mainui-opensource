@@ -198,6 +198,24 @@ KEYMAP.unlink()
 missing = shot(elapsed=60000, libraries=False)
 assert cover_shown(missing) and not fullscreen(missing)
 setting("0")
+# ROM-list previews use the gallery's same single-video discovery rules.
+original = ROMS / "media/videos/Alpha.mp4"
+for ext in ("MP4", "mKv", "AVI", "MoV", "WEBM", "m4v"):
+    alternate = original.with_suffix("." + ext)
+    original.rename(alternate)
+    try:
+        assert video_box(shot(elapsed=60000)), ext
+    finally:
+        alternate.rename(original)
+# A different basename is never accepted, even when its extension matches.
+other = ROMS / "media/videos/Alpha Game.WEBM"
+other.write_text("STUB 320 240 200 20\n")
+try:
+    original.rename(ROMS / "media/videos/Alpha.hidden")
+    assert not video_box(shot(elapsed=60000))
+finally:
+    (ROMS / "media/videos/Alpha.hidden").rename(original)
+    other.unlink()
 
 # Live: every partial frame of the playing video, and of a long title bouncing
 # beside it, equals a full frame (MAINUI_VERIFY_PARTIAL aborts otherwise).

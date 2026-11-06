@@ -82,6 +82,19 @@ int mainui_suite_name_input(void)
     mainui_details_key(&details, NULL, NULL, NULL, NULL, 6, SDLK_HOME, NULL);
     assert(details.scroll_line == 0);
 
+    /* Returning from the media popup restarts manual/automatic description
+     * scrolling, while preserving metadata and cached text layout. */
+    details.open = true;
+    details.scroll_line = 12;
+    details.scroll_px = 180;
+    details.auto_started = details.auto_paused = details.auto_finished = true;
+    details.auto_held = true;
+    details.swallow_page_key = SDLK_END;
+    mainui_details_reset_scroll(&details);
+    assert(details.scroll_line == 0 && details.scroll_px == 0);
+    assert(!details.auto_started && !details.auto_paused && !details.auto_finished &&
+           !details.auto_held && details.swallow_page_key == SDLK_UNKNOWN);
+
     /* Auto-scroll starts after delay, advances by pixels, and stops once
      * at the bottom. Holding the gallery freezes the elapsed clock. */
     MainUIDetails auto_details = {.open = true,

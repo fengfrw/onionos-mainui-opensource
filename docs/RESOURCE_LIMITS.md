@@ -17,6 +17,8 @@ Its sound is decoded up to 1 second ahead, 16-bit stereo at the mixer's rate, in
 To read that far, up to 512 compressed pictures, at most 4 MiB, are read ahead of decoding. When that is full, the pictures already read are decoded first, in order, before a new one.
 A list's video preview (`.romListVideoPreview`) plays one video at a time, without sound, fitted to the cover's area: two frames of at most 250 by 360 pixels (0.7 MiB) and its decoder, on a thread that runs only while that game stays selected; the libraries are loaded when it starts and closed when it stops.
 In `fullscreen` mode its two frames are fitted to the screen, at most 640 by 480 pixels (2.3 MiB), as the gallery's.
+Game Info's maps and walkthrough are read only when chosen. At most 32 maps are listed, and one is kept at a time: fitted to the screen (at most 1.2 MiB), or at its own size within the same pre-decode guard, at most 2000 by 2000 pixels (15.3 MiB).
+The walkthrough reads at most its first 2 MiB and wraps at most 32,768 lines, kept as offsets into that text (256 KiB at most on the device), laid out only as far as they are shown or a search needs; a search goes through the text read, never the file again. A PDF manual is never read by MainUI: Green opens it.
 Theme fonts are limited to 64 MiB per encoded file before SDL_ttf opens them; larger fonts are logged and fall back to the default font. FreeType reads fonts on demand, so this only rejects implausible files, and large CJK fonts fit.
 
 The arcade-name map is limited to 8 MiB and 131,072 lines, bounding both its text buffer and hash table. Larger maps use the original filename fallback. The existing large-map compatibility fixture remains within these limits.

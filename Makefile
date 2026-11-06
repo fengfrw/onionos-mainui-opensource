@@ -62,7 +62,7 @@ UNIT_OBJ   := $(UNIT_SRC:%.c=$(O)/obj/%.o)
 # Harnesses driven by tests/integration/*.py, which build an SD tree first and
 # pass its path in. One binary each; add a name and the file is picked up.
 FIXTURES   := allocation_bounds artwork boundaries cache catalog catalog_job desktop device \
-              dialogs favorite_edit frame language library recent sources stock_settings video
+              dialogs favorite_edit frame language library media_maps media_text recent sources stock_settings video
 FIXTURE_BIN := $(FIXTURES:%=$(O)/fixture-%)
 
 HOST_BIN   := $(O)/MainUI-dev $(O)/unit-tests $(O)/core-probe \

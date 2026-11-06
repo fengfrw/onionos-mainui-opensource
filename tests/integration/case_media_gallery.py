@@ -3,9 +3,12 @@
 back covers, 3D box, screenshots and video from media/ in its console's ROM
 folder, by the ROM file's name; never the Imgs cover Game Info shows. Right
 and Left browse, and B, or Left on the first item, returns to Game Info.
-Videos play with Onion's FFmpeg, loaded from .tmp_update/lib/parasyte only
-then; here a stub stands in for it (tests/ffmpeg_stub.c) under FFmpeg's
-sonames, with LD_LIBRARY_PATH as Onion starts MainUI, without that folder."""
+Maps in media/maps and a walkthrough in media/manuals show on their own, B
+going back to Game Info from them too; Select in Game Info, the gallery, a
+map or the walkthrough opens a menu of the others. Videos play with Onion's
+FFmpeg, loaded from .tmp_update/lib/parasyte only then; here a stub stands in
+for it (tests/ffmpeg_stub.c) under FFmpeg's sonames, with LD_LIBRARY_PATH as
+Onion starts MainUI, without that folder."""
 import json
 import os
 from pathlib import Path
@@ -16,6 +19,9 @@ from PIL import Image
 from env import BUILD, ONION_THEME, require_onion_theme  # noqa: E402
 
 require_onion_theme()
+# The standalone map and walkthrough fixtures are built by the same Makefile.
+for fixture in ("fixture-media_maps", "fixture-media_text"):
+    subprocess.run([str(BUILD / fixture)], check=True, capture_output=True)
 ROOT = Path(__file__).resolve().parents[2]
 OUT = Path(tempfile.mkdtemp(prefix="media-gallery-", dir=BUILD))
 FFMPEG = ("libavutil.so.54", "libswscale.so.3", "libavcodec.so.56", "libavformat.so.56")
@@ -211,12 +217,20 @@ assert shot("DRRL")[0] == info and shot("DRRRLL")[0] == info
 # B returns to Game Info, from an image or a video, as it was.
 for actions in ("DRRB", VIDEO + "B", "DRRRRRRB", VIDEO + "BRB" + "R" * 7 + "B", "DRRLRLRRLLRB"):
     assert shot(actions)[0] == info, actions
-# Up and Down, A and Select do nothing in the gallery; B still returns.
-assert shot("DRRUDES")[0] == box
-assert shot("DRRUDESB")[0] == info
-# A game without media: Right does nothing in Game Info.
+# Up/Down and A do nothing on a still image; Select opens the context popup.
+assert shot("DRRUDE")[0] == box
+assert shot("DRRS")[0] != box
+assert shot("DRRSB")[0] == box
+assert shot("DRRSBB")[0] == info
+# Select from Game Info opens the menu without Game Info: here only Gallery.
+assert shot("DRS")[0] != info
+assert shot("DRSA")[0] == box
+assert shot("DRSB")[0] == info
+assert shot("DRSDA")[0] == box
+# A game without media: Right and Select do nothing in Game Info.
 plain, _ = shot("DDR")
 assert shot("DDRR")[0] == plain
+assert shot("DDRS")[0] == plain
 # A game in a subfolder (below ".."): its media is at the console's ROM
 # folder. Its screenshots start at -2; Right on the last stays there.
 for steps, colour in enumerate([COLOURS["box2dfront"], (90, 90, 90), (150, 150, 150),
@@ -247,5 +261,140 @@ before = (SD / "Roms/favourite.json").read_text()
 gallery = shot("ERR", system=None)[0]
 assert shot("ERRXY", system=None)[0] == gallery
 assert (SD / "Roms/favourite.json").read_text() == before
+# Video discovery keeps the same gallery order but accepts common container
+# extensions, regardless of extension case, without extra media folders.
+original = ROMS / "media/videos" / (GAME + ".mp4")
+for ext in ("MP4", "mKv", "AVI", "MoV", "WEBM", "m4v"):
+    alternative = original.with_suffix("." + ext)
+    original.rename(alternative)
+    try:
+        still_video, _ = shot(VIDEO)
+        assert centre(still_video) == FRAME0 and still_video.getpixel((2, 2)) == FRAME0, ext
+        # Each game still gets exactly one gallery video item.
+        assert frame(shot(VIDEO + "R")[0]) <= 4, ext  # still the last item
+    finally:
+        alternative.rename(original)
+# With two video formats present, .mp4 wins even if the other exists first.
+other = original.with_suffix(".mkv")
+other.write_text("STUB 120 240 200 20\n")
+try:
+    selected, _ = shot(VIDEO)
+    assert selected.getpixel((2, 2)) == FRAME0
+    assert frame(shot(VIDEO + "R")[0]) <= 4  # still the last item
+finally:
+    other.unlink()
+# Select on a video opens the menu over it, paused; B goes back with the video
+# playing on from there, not from its start, and one paused before stays so.
+SEEK = VIDEO + "2"
+assert shot(SEEK + "S")[0] != shot(SEEK)[0]
+on_again, _ = shot(SEEK + "SB")
+assert 100 <= frame(on_again) <= 104 and not label(on_again), frame(on_again)
+assert 100 <= frame(shot(SEEK + "SS")[0]) <= 104  # Select closes it too
+still_paused, _ = shot(VIDEO + "A2SB")
+assert 100 <= frame(still_paused) <= 102 and label(still_paused)
+# Game maps are separate from the existing gallery; only media/maps is read,
+# and only PNG: JPEG and BMP maps are not shown.
+MAPS = ROMS / "media/maps"
+MAPS.mkdir(parents=True)
+MAP = {"": (100, 30, 210), "-1": (210, 90, 40), "-2": (40, 190, 210)}
+for suffix, rgb in MAP.items():
+    Image.new("RGB", (320, 240), rgb).save(MAPS / (GAME + suffix + ".png"))
+Image.new("RGB", (320, 240), (10, 10, 10)).save(MAPS / (GAME + "-3.jpg"), format="JPEG")
+Image.new("RGB", (320, 240), (20, 20, 20)).save(MAPS / (GAME + "-4.bmp"))
+info_now, _ = shot("DR")
+# The menu leaves out the view it is opened from and always offers Game Info
+# outside it: from the gallery, Game Info and Game Maps.
+menu_gallery, _ = shot("DRRS")
+assert menu_gallery != box
+assert shot("DRRSB")[0] == box and shot("DRRSS")[0] == box
+assert shot("DRRSA")[0] == info_now
+map_one, _ = shot("DRRSDA")
+assert centre(map_one) == MAP[""], centre(map_one)
+assert centre(shot("DRRSDA2")[0]) == MAP["-1"]
+assert centre(shot("DRRSDA22")[0]) == MAP["-2"]
+assert centre(shot("DRRSDA221")[0]) == MAP["-1"]
+assert centre(shot("DRRSDA1")[0]) == MAP["-2"]  # three maps, round the ends
+# Up and Down go round the menu.
+assert shot("DRRSUA")[0] == map_one and shot("DRRSDDA")[0] == info_now
+# From Game Info: Gallery and Game Maps.
+assert shot("DRSA")[0] == box and shot("DRSDA")[0] == map_one
+# Select in a map: the menu without Game Maps; B or Select back to that map,
+# Game Info and Gallery on its rows.
+second_map, _ = shot("DRRSDA2")
+assert shot("DRRSDA2S")[0] not in (second_map, menu_gallery)
+for keys in ("SB", "SS"):
+    assert shot("DRRSDA2" + keys)[0] == second_map, keys
+# The menu darkens a view without a footer to the bottom, but leaves Game
+# Info's footer as it is.
+bottom = second_map.getpixel((320, 470))
+dimmed = shot("DRRSDA2S")[0].getpixel((320, 470))
+assert sum(bottom) > 150 and all(d < b // 2 for d, b in zip(dimmed, bottom)), (bottom, dimmed)
+footer = (0, 421, 640, 480)
+assert shot("DRS")[0].crop(footer).tobytes() == info_now.crop(footer).tobytes()
+assert shot("DRRSDA2SA")[0] == info_now
+assert shot("DRRSDA2SDA")[0] == box
+# B in a map goes back to Game Info.
+assert shot("DRRSDAB")[0] == info_now
+# A toggles native size and fit; R2 (4) shows native size and L2 (3) fits,
+# each doing nothing when already so.
+native, _ = shot("DRRSDAA")
+assert native != map_one
+assert shot("DRRSDA4")[0] == native and shot("DRRSDA44")[0] == native
+assert shot("DRRSDAA3")[0] == map_one and shot("DRRSDA3")[0] == map_one
+assert shot("DRRSDA43")[0] == map_one and shot("DRRSDAAA")[0] == map_one
+assert centre(shot("DRRR")[0]) == COLOURS["box2dback"]
+
+# TXT walkthroughs live only in media/manuals, not among ROMs.
+MANUALS = ROMS / "media/manuals"
+MANUALS.mkdir(parents=True)
+(MANUALS / (GAME + ".txt")).write_text(
+    "GAME WALKTHROUGH\nChapter 1\n" + "Collect everything before the boss.\n" * 40
+    + "The key is in the qqq room.\n" + "Collect everything before the boss.\n" * 20
+    + "A second QQQ room, in capitals.\n" + "Collect everything before the boss.\n" * 20,
+    encoding="utf-8")
+assert shot("DRR")[0] == box  # no control hint in the gallery
+# From the gallery: Game Info, Game Maps, Walkthrough.
+reader, _ = shot("DRRSDDA")
+assert reader not in (menu_gallery, box)
+scrolled, _ = shot("DRRSDDADD")
+assert scrolled != reader
+# Select in the walkthrough opens the menu without it; B or Select goes back
+# to the same place, and its first row is Game Info.
+assert shot("DRRSDDADDS")[0] != scrolled
+assert shot("DRRSDDADDSB")[0] == scrolled
+assert shot("DRRSDDADDSS")[0] == scrolled
+assert shot("DRRSDDADDSA")[0] == info_now
+# B in the walkthrough goes back to Game Info.
+assert shot("DRRSDDAB")[0] == info_now
+# Search: A opens the keyboard, here typing qqq (Down to q, A three times),
+# and Start searches; the match's line goes to the top, marked. Start again
+# finds the next one, in any case, and then round to the first.
+MARK = (150, 110, 20)
+SEARCH = "DRRSDDA" + "ADAAAT"
+found, _ = shot(SEARCH)
+assert found != reader and MARK in colours(found)
+second, _ = shot(SEARCH + "T")
+assert second != found and MARK in colours(second)
+assert shot(SEARCH + "TT")[0] == found
+# Nothing found ("0": Left to it, A): the page stays, nothing marked.
+missing, _ = shot("DRRSDDA" + "ALAT")
+assert missing != reader and MARK not in colours(missing)
+assert MARK not in colours(reader)
+# A game with only a walkthrough: Select opens the menu over Game Info, with
+# only Walkthrough; Right, without a gallery, does nothing.
+(MANUALS / "Zero Media.txt").write_text("SINGLE WALKTHROUGH\nHello world\n", encoding="utf-8")
+media_only, _ = shot("DDRS")
+assert media_only != plain and shot("DDRR")[0] == plain
+alone, _ = shot("DDRSA")
+assert alone != media_only
+assert shot("DDRSAB")[0] == plain
+# Select there: the menu with only Game Info.
+assert shot("DDRSASA")[0] == plain and shot("DDRSASB")[0] == alone
+# A TXT file beside the ROM is intentionally not discovered.
+(MANUALS / "Zero Media.txt").unlink()
+(ROMS / "Zero Media.txt").write_text("Not a supported path\n")
+assert shot("DDRR")[0] == plain
+assert shot("DDRS")[0] == plain
+
 shutil.rmtree(OUT)
-print("Game Info's gallery shows box art, screenshots and video; B returns to Game Info")
+print("Game Info's gallery, maps and walkthrough, and its media menu, work; B goes back")

@@ -697,6 +697,13 @@ static void wait_for_carousel_vsync(void)
 }
 #endif
 
+static void present(MainUIApp *ui, const SDL_Rect *areas, int count);
+
+void mainui_present_whole(MainUIApp *ui)
+{
+    present(ui, NULL, 0);
+}
+
 /* Rotate (on the device) and flip. Rectangles limit the rotated copy; the
  * logical frame stays upright and complete for later partial frames. */
 static void present(MainUIApp *ui, const SDL_Rect *areas, int count)
@@ -883,6 +890,11 @@ static bool compose_full_frame(MainUIApp *ui)
         /* Retain the previous frame until the catalog result is ready. */
     }
     else if (ui->details.media.open) {
+        /* A popup entered from Game Info uses that screen as its backdrop. */
+        if (mainui_media_over_details(&ui->details.media)) {
+            mainui_details_progress(&ui->details, ui->snapshot ? MAINUI_PREVIEW_WAIT_FOREVER : 0);
+            mainui_details_draw(&ui->details, &ui->theme, ui->screen);
+        }
         mainui_media_draw(&ui->details.media, &ui->theme, ui->screen, ui->snapshot);
     }
     else if (mainui_list_video_fullscreen(&ui->list_video)) {

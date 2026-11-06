@@ -2,6 +2,8 @@
 #ifndef MAINUI_MEDIA_VIEWER_H
 #define MAINUI_MEDIA_VIEWER_H
 #include "platform/video.h"
+#include "ui/media_maps.h"
+#include "ui/media_text.h"
 #include "ui/theme.h"
 #include <SDL.h>
 #include <stdbool.h>
@@ -14,7 +16,10 @@
  *   media/box2dback/<name>.png
  *   media/box3d/<name>.png
  *   media/screenshot/<name>.png, then <name>-1.png, <name>-2.png, ...
- *   media/videos/<name>.mp4
+ *   media/videos/<name>.(mp4|mkv|avi|mov|webm|m4v), extension case-insensitive
+ *   media/maps/<name>.png, <name>-1.png, <name>-2.png, ... (separate viewer)
+ *   media/manuals/<name>.txt (separate walkthrough reader)
+ *   media/manuals/<name>.pdf (optional external Green reader)
  *
  * The folders are named as Skraper names them by default, so its media can
  * be copied as it comes.
@@ -40,9 +45,38 @@ typedef struct {
     char path[4096];
 } MainUIMediaItem;
 
+enum {
+    MEDIA_RETURN_DETAILS,
+    MEDIA_RETURN_GALLERY,
+    MEDIA_RETURN_MAPS,
+    MEDIA_RETURN_TEXT
+};
+
 typedef struct {
     bool open, image_failed;
     int count, index;
+    /* Gallery, media selection, or game maps. Maps are kept separate so
+     * existing screenshot/video order and video preview remain unchanged. */
+    int mode, menu_selection, map_count, map_index, map_pan_x, map_pan_y;
+    bool map_zoom;
+    /* Where B and Select in the menu go back to (MEDIA_RETURN_*), whether B
+     * in a map or the walkthrough leads back to the gallery rather than Game
+     * Info, and whether the menu paused the gallery's video. */
+    int menu_return;
+    bool menu_paused;
+    /* The walkthrough's search: its text, kept while it is open; A asks the
+     * application for the keyboard (search_requested), and the match found
+     * is at byte search_at, moved to the top when pending. */
+    char search[128];
+    bool search_requested, search_found, search_pending, search_missing;
+    size_t search_at;
+    Uint32 search_missing_at;
+    char manual_path[4096]; /* exact media/manuals path, if present */
+    char pdf_path[4096];    /* exact PDF path; no reader loaded inside MainUI */
+    bool pdf_requested;     /* A on Manual; consumed by the application */
+    MainUITextReader *text; /* allocated and read only when opened */
+    int text_scroll;        /* queued lines, applied after layout in draw */
+    MainUIMap *maps;        /* owned while open, up to MAINUI_MEDIA_MAPS_MAX */
     MainUIMediaItem *items; /* owned while open */
     SDL_Surface *image;     /* the shown image, fitted to the screen */
     MainUIVideo *video;     /* the shown video while it plays */
@@ -56,21 +90,39 @@ typedef struct {
     char library_dir[4096]; /* Onion's FFmpeg: <sd>/.tmp_update/lib/parasyte */
 } MainUIMediaViewer;
 
-/* The game's media in gallery order, by stat() alone: nothing is read. A
+/* The game's media in gallery order, without reading file contents. A
  * missing screenshot number from -2 on ends the numbered ones. Returns the
- * count. */
+ * count. Video discovery scans the videos directory only when the
+ * lowercase .mp4 file is absent; no scanning occurs during drawing. */
 int mainui_media_find(const char *rom_root, const char *rom, MainUIMediaItem *items, int max);
-/* The game's video, media/videos/<name>.mp4, when it exists, by stat(). */
+/* The preferred regular video in media/videos for the exact ROM basename.
+ * Format priority: mp4, mkv, avi, mov, webm, m4v (case-insensitive). */
 bool mainui_media_video(const char *rom_root, const char *rom, char path[4096]);
-/* Open on the first item. False, with nothing open, when the game has none.
- * sd is the SD card's root, for Onion's FFmpeg in .tmp_update/lib/parasyte. */
+/* Open the gallery on its first item. False, with nothing open, when the
+ * game has no gallery item. sd is the SD card's root, for Onion's FFmpeg in
+ * .tmp_update/lib/parasyte. */
 bool mainui_media_open(MainUIMediaViewer *viewer, const char *rom_root, const char *rom,
                        const char *sd, SDL_Surface *screen);
-/* Right shows the next item, up to the last; Left the previous one, and
- * from the first it closes, as B does. On a video A
- * pauses and goes on, and L and R jump about 5 s back and forward, to a
- * keyframe. Every key is
- * taken while the gallery is open. */
+/* Select from Game Info: open the themed media menu over it, without its
+ * Game Info row. False for a game without any media. */
+bool mainui_media_open_menu(MainUIMediaViewer *viewer, const char *rom_root, const char *rom,
+                            const char *sd, SDL_Surface *screen);
+/* Search the walkthrough for term (ASCII letters in any case), from the page
+ * shown, or with next after the match shown, then round from the start;
+ * the match's line goes to the top. Kept as the search for Start. */
+void mainui_media_search(MainUIMediaViewer *viewer, const char *term, bool next);
+/* True while the media popup is over Game Info rather than the gallery. */
+bool mainui_media_over_details(const MainUIMediaViewer *viewer);
+/* Every key is taken while media is open. B in the gallery, a map or the
+ * walkthrough goes back to Game Info, and Select opens the menu over it,
+ * without that view's row and with Game Info's; B or Select there goes back.
+ * Gallery: Right the next item, up to the last, Left the previous one and
+ * from the first back to Game Info; on a video A pauses and goes on, and L
+ * and R jump about 5 s back and forward, to a keyframe. Maps: L and R the
+ * previous and next map, A toggles fit and native size, L2 fits and R2 shows
+ * native size, the D-pad moving round it. Walkthrough: Up and Down a line, L
+ * and R 15 and L2 and R2 75; A asks for the search keyboard (search_requested)
+ * and Start finds the next match. */
 void mainui_media_key(MainUIMediaViewer *viewer, SDLKey key, SDL_Surface *screen);
 /* A video starts once it has been shown this long; snapshots start it at
  * once. */
@@ -85,6 +137,10 @@ int mainui_media_due(const MainUIMediaViewer *viewer, Uint32 now);
  * still; on waking it goes on from there, or stays paused. Kept across
  * close, so a video shown meanwhile starts held. */
 void mainui_media_sleep(MainUIMediaViewer *viewer, bool sleeping, Uint32 now);
+/* Back from the PDF reader: the menu Manual (PDF) was chosen in closes, as
+ * B closes it, onto the view it was opened over (that view drawn again into
+ * screen) or Game Info. */
+void mainui_media_back_from_pdf(MainUIMediaViewer *viewer, SDL_Surface *screen);
 /* Stop any video and free everything. Safe when closed. */
 void mainui_media_close(MainUIMediaViewer *viewer);
 #endif

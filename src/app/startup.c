@@ -39,7 +39,7 @@ static long long startup_ms(void)
  * pan on a normal exit. An App that exits through pressMenu2Kill SIGKILLs it,
  * leaving the pan non-zero. Our single-buffered SDL surface is drawn at offset
  * 0, so every frame would be invisible. Best effort: never fails startup. */
-static void reset_framebuffer_pan(const char *when)
+void mainui_reset_framebuffer_pan(const char *when)
 {
     int fd = open("/dev/fb0", O_RDWR | O_CLOEXEC);
     if (fd < 0) {
@@ -82,7 +82,7 @@ static void quit_sdl(const MainUIApp *ui)
     SDL_Quit();
 #ifdef MAINUI_ONION
     if (device) {
-        reset_framebuffer_pan("exit");
+        mainui_reset_framebuffer_pan("exit");
     }
 #endif
 }
@@ -263,7 +263,7 @@ int mainui_setup_video(MainUIApp *ui)
      * pan 0 rather than a killed RetroArch's buffer (a brief flash of its last
      * frame on exit). The resets after SDL_SetVideoMode and SDL_Quit stay. */
     if (ui->real_device && !ui->snapshot) {
-        reset_framebuffer_pan("before SDL");
+        mainui_reset_framebuffer_pan("before SDL");
     }
 #endif
     long long t0 = startup_ms();
@@ -297,7 +297,7 @@ int mainui_setup_video(MainUIApp *ui)
     long long t3 = startup_ms();
 #ifdef MAINUI_ONION
     if (ui->display && ui->real_device) {
-        reset_framebuffer_pan("startup");
+        mainui_reset_framebuffer_pan("startup");
     }
 #endif
     ui->screen = ui->display;

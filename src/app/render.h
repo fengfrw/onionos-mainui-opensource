@@ -25,6 +25,9 @@ int mainui_console_mode(const MainUIApp *ui);
  * the frame is not presented, keeping the one before. */
 bool mainui_carousel_hold_frame(const MainUIApp *ui);
 void mainui_prepare_frame(MainUIApp *ui);
+/* Show the whole of ui->screen at once, rotated on the device as a frame is:
+ * for a panel drawn outside the frame loop. */
+void mainui_present_whole(MainUIApp *ui);
 /* False skips the wait/dispatch phase. Snapshot completion or a fatal render
  * error also clears running; starting a catalog reload leaves it set. */
 bool mainui_draw_frame(MainUIApp *ui);

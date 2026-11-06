@@ -57,7 +57,10 @@ void mainui_details_prepare(MainUIDetails *details, MainUITheme *theme);
 void mainui_details_draw(MainUIDetails *details, MainUITheme *theme, SDL_Surface *screen);
 /* Right opens the game's media gallery when it has any (see media_viewer.h);
  * else it does nothing. */
-void mainui_details_media(MainUIDetails *details, const char *sd, SDL_Surface *screen);
+void mainui_details_media(MainUIDetails *details, const char *sd, SDL_Surface *screen,
+                          bool context_menu);
+/* Reset manual and automatic description scrolling on return from media. */
+void mainui_details_reset_scroll(MainUIDetails *details);
 /* UI-thread animation. Due returns -1 when idle. Hold freezes its clock for
  * sleep, dialogs and the media gallery; it never starts a worker or timer. */
 void mainui_details_auto_hold(MainUIDetails *details, bool hold, Uint32 now);

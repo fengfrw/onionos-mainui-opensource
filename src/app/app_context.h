@@ -127,6 +127,7 @@ typedef struct {
     int timer_interval;
     bool timer_failure_logged;
     bool search_keyboard;
+    bool media_keyboard; /* the keyboard searches Game Info's walkthrough */
     bool wifi_was_visible;
     /* A connection was made to wifi_join_ssid: if it is not joined by
      * wifi_join_until, the Wi-Fi page says so, until it is. Joined counts

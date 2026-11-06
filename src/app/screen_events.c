@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 #include "app/screen_events.h"
+#include "app/pdf.h"
 #include "app/positions.h"
 #include "app/render.h"
 #include "catalog/saved_actions.h"
@@ -317,6 +318,16 @@ bool mainui_screen_name_input_key(MainUIApp *ui, const SDL_keysym *key)
                              ? "SSID must contain 1-32 UTF-8 bytes."
                              : "Use 8-63 bytes, or empty for an open network.");
             }
+        }
+        return true;
+    }
+    if (ui->media_keyboard) {
+        if (result == NAME_SUBMIT) {
+            mainui_media_search(&ui->details.media, ui->name_input.text, false);
+        }
+        if (result != NAME_EDITING) {
+            mainui_name_input_close(&ui->name_input);
+            ui->media_keyboard = false;
         }
         return true;
     }
@@ -1404,10 +1415,23 @@ static void dispatch_key(MainUIApp *ui, SDL_Event *event)
     /* The media gallery, over Game Info, takes every key. Right opens it. */
     if (ui->details.open && ui->details.media.open) {
         mainui_media_key(&ui->details.media, key, ui->screen);
+        if (!ui->details.media.open) {
+            mainui_details_reset_scroll(&ui->details);
+        }
+        if (ui->details.media.pdf_requested) {
+            ui->details.media.pdf_requested = false;
+            mainui_pdf_launch(ui, ui->details.media.pdf_path);
+        }
+        /* A in the walkthrough: the keyboard, with the last search. */
+        if (ui->details.media.search_requested) {
+            ui->details.media.search_requested = false;
+            ui->media_keyboard = true;
+            mainui_name_input_open(&ui->name_input, &ui->theme, 153, ui->details.media.search);
+        }
         return;
     }
-    if (ui->details.open && key == SDLK_RIGHT) {
-        mainui_details_media(&ui->details, ui->sd, ui->screen);
+    if (ui->details.open && (key == SDLK_RIGHT || key == SDLK_RCTRL)) {
+        mainui_details_media(&ui->details, ui->sd, ui->screen, key == SDLK_RCTRL);
         return;
     }
     if (ui->details.open && key == SDLK_RETURN && ui->handoff_dir) {

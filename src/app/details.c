@@ -17,11 +17,27 @@ void mainui_details_close(MainUIDetails *details)
     details->media.sleeping = sleeping;
 }
 
-void mainui_details_media(MainUIDetails *details, const char *sd, SDL_Surface *screen)
+void mainui_details_media(MainUIDetails *details, const char *sd, SDL_Surface *screen,
+                          bool context_menu)
 {
-    if (details->open) {
-        mainui_media_open(&details->media, details->rom_root, details->host_rom, sd, screen);
+    if (details->open && (context_menu ? mainui_media_open_menu(&details->media, details->rom_root,
+                                                                details->host_rom, sd, screen)
+                                       : mainui_media_open(&details->media, details->rom_root,
+                                                           details->host_rom, sd, screen))) {
+        /* The description stops and goes back to the top as media opens,
+         * and starts again after its delay on return. */
+        mainui_details_reset_scroll(details);
     }
+}
+
+void mainui_details_reset_scroll(MainUIDetails *details)
+{
+    /* Returning from media starts Game Info's description from the top and
+     * restarts its auto-scroll delay, without reallocating the layout. */
+    details->scroll_line = details->scroll_px = 0;
+    details->auto_started = details->auto_paused = details->auto_finished = false;
+    details->auto_held = false;
+    details->swallow_page_key = SDLK_UNKNOWN;
 }
 
 void mainui_details_progress(MainUIDetails *details, Uint32 wait_ms)
