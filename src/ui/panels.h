@@ -22,8 +22,11 @@ void mainui_draw_languages(SDL_Surface *screen, MainUITheme *theme, const MainUI
 void mainui_draw_footer(SDL_Surface *screen, MainUITheme *theme, int page, int total);
 void mainui_draw_settings(SDL_Surface *screen, MainUITheme *theme,
                           const MainUIStockSettings *settings);
+/* favorite[row], for the four rows from view->start (NULL for none): the
+ * app is a Favorite, marked with the theme's skin/ic-favorite-mark.png at the
+ * row's right. With that image, every row's text stops short of it. */
 void mainui_draw_apps(SDL_Surface *screen, MainUITheme *theme, MainUICatalog *apps,
-                      const MainUIViewport *view);
+                      const MainUIViewport *view, const bool *favorite);
 void mainui_draw_message(SDL_Surface *screen, MainUITheme *theme, const char *title,
                          const char *body);
 /* Draw stock Empty.png at its natural size, centered in the 640x480 surface. */

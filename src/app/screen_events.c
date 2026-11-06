@@ -1207,16 +1207,25 @@ static bool game_selected(MainUIApp *ui)
                               !mainui_browser_folder(ui->catalog, ui->view.selected));
 }
 
-/* The Favorite shortcut: the selected game is added to Favorites, or removed
- * when it is one, as the context menu's Add to favorites and Remove
- * Favorite do. */
+/* Apps in front with nothing over it, and an app selected. */
+static bool app_selected(const MainUIApp *ui)
+{
+    return ui->apps && !ui->settings_open && !ui->context_open && ui->confirmation < 0 &&
+           !*ui->message_title && !ui->name_input.open && ui->apps_view.selected >= 0 &&
+           ui->apps_view.selected < ui->apps->pages[0].count;
+}
+
+/* The Favorite shortcut: the selected game, or app in Apps, is added to
+ * Favorites, or removed when it is one, as the context menu's Add to
+ * favorites and Remove Favorite do. */
 static void toggle_favorite(MainUIApp *ui)
 {
     cJSON *record =
-        ui->library ? cJSON_Duplicate(
-                          ui->library->items[ui->library->visible[ui->view.selected]].json, true)
-                    : mainui_catalog_record(ui->catalog,
-                                            mainui_browser_index(ui->catalog, ui->view.selected));
+        ui->apps      ? mainui_catalog_record(ui->apps, ui->apps_view.selected)
+        : ui->library ? cJSON_Duplicate(
+                            ui->library->items[ui->library->visible[ui->view.selected]].json, true)
+                      : mainui_catalog_record(ui->catalog,
+                                              mainui_browser_index(ui->catalog, ui->view.selected));
     if (!record) {
         return;
     }
@@ -1312,6 +1321,24 @@ static void button_shortcut(MainUIApp *ui, char button)
     ui->launch_source.alternate = false;
     if (!ui->launch_pending) {
         snprintf(ui->message_title, sizeof ui->message_title, "Launch unavailable");
+    }
+}
+
+/* X or Y on an app in Apps: only the Favorite shortcut acts there, adding
+ * the app to Favorites or removing it. Game List Options, none, or keymon's
+ * app or tool do nothing, as before. */
+static void app_shortcut(MainUIApp *ui, char button)
+{
+    if (!app_selected(ui) || !ui->sd) {
+        return;
+    }
+    char why[160];
+    MainUIShortcut shortcut = mainui_button_shortcut(ui->sd, button, why);
+    if (shortcut == MAINUI_SHORTCUT_KEYMON) {
+        fprintf(stderr, "[launch] %c ignored: %s\n", button, why);
+    }
+    else if (shortcut == MAINUI_SHORTCUT_FAVORITE) {
+        toggle_favorite(ui);
     }
 }
 
@@ -1483,6 +1510,13 @@ static void dispatch_key(MainUIApp *ui, SDL_Event *event)
         mainui_catalog_job_start(&ui->catalog_job, JOB_RELOAD, &ui->launch_source, ui->sd,
                                  ui->config.case_sensitive, ui->config.rows, NULL,
                                  ++ui->catalog_generation);
+        return;
+    }
+    /* Y on an app: its Favorite shortcut, once per press. */
+    if (key == SDLK_LALT && app_selected(ui)) {
+        if (!was_held) {
+            app_shortcut(ui, 'Y');
+        }
         return;
     }
     const char *button = mainui_input_button(key);
@@ -1835,9 +1869,14 @@ bool mainui_dispatch_event(MainUIApp *ui, SDL_Event *event)
      * dialog, message or keyboard opened while X was held owns the keys. */
     if (event->type == SDL_KEYUP && key == SDLK_LSHIFT && ui->x_armed) {
         ui->x_armed = false;
-        if ((game_list_open(ui) || game_info_open(ui)) &&
-            !(ui->device_enabled && ui->device_status.sleeping == 1)) {
+        if (ui->device_enabled && ui->device_status.sleeping == 1) {
+            return true;
+        }
+        if (game_list_open(ui) || game_info_open(ui)) {
             button_shortcut(ui, 'X');
+        }
+        else if (app_selected(ui)) {
+            app_shortcut(ui, 'X');
         }
         return true;
     }
@@ -1865,7 +1904,9 @@ bool mainui_dispatch_event(MainUIApp *ui, SDL_Event *event)
         return true;
     }
     if (event->type == SDL_KEYDOWN && key == SDLK_LSHIFT && (ui->x_armed || x_bound(ui))) {
-        if (!ui->held[key] && (game_list_open(ui) || game_info_open(ui)) && game_selected(ui) &&
+        if (!ui->held[key] &&
+            (((game_list_open(ui) || game_info_open(ui)) && game_selected(ui)) ||
+             app_selected(ui)) &&
             !(ui->device_enabled && ui->device_status.sleeping == 1)) {
             ui->x_armed = true;
         }

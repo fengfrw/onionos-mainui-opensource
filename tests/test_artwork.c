@@ -389,7 +389,7 @@ int main(int argc, char **argv)
         SDL_CreateRGBSurface(SDL_SWSURFACE, 640, 480, 32, 0xff0000, 0xff00, 0xff, 0);
     assert(screen);
     MainUIViewport apps_view = {.total = 3, .selected = 0, .start = 0, .end = 1};
-    mainui_draw_apps(screen, &theme, apps, &apps_view);
+    mainui_draw_apps(screen, &theme, apps, &apps_view, NULL);
     SDL_Surface *kept = NULL;
     for (int i = 0; i < 4; i++) {
         if (theme.app_icon_paths[i] && !strcmp(theme.app_icon_paths[i], app_icons[0])) {
@@ -398,14 +398,14 @@ int main(int argc, char **argv)
     }
     assert(kept && kept->w == 60);
     kept->refcount++;
-    mainui_draw_apps(screen, &theme, apps, &apps_view);
+    mainui_draw_apps(screen, &theme, apps, &apps_view, NULL);
     int holders = 0;
     for (int i = 0; i < 4; i++) {
         holders += theme.app_icons[i] == kept;
     }
     assert(holders == 1 && kept->refcount == 2);
     apps_view = (MainUIViewport){.total = 3, .selected = 2, .start = 1, .end = 2};
-    mainui_draw_apps(screen, &theme, apps, &apps_view);
+    mainui_draw_apps(screen, &theme, apps, &apps_view, NULL);
     assert(kept->refcount == 1);
     SDL_FreeSurface(kept);
     int shown = 0;

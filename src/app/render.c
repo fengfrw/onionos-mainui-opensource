@@ -885,7 +885,18 @@ static bool compose_full_frame(MainUIApp *ui)
         mainui_draw_settings(ui->screen, &ui->theme, &ui->settings);
     }
     else if (ui->apps) {
-        mainui_draw_apps(ui->screen, &ui->theme, ui->apps, &ui->apps_view);
+        /* The shown apps that are Favorites, from the list already read. */
+        bool favorite[4] = {false};
+        for (int i = 0; i < 4 && ui->favorites && ui->favorites->count &&
+                        ui->apps_view.start + i < ui->apps_view.total;
+             i++) {
+            cJSON *record = mainui_catalog_record(ui->apps, ui->apps_view.start + i);
+            const cJSON *rom = cJSON_GetObjectItemCaseSensitive(record, "rompath");
+            favorite[i] =
+                cJSON_IsString(rom) && mainui_library_contains(ui->favorites, rom->valuestring);
+            cJSON_Delete(record);
+        }
+        mainui_draw_apps(ui->screen, &ui->theme, ui->apps, &ui->apps_view, favorite);
     }
     else if (ui->home) {
         mainui_menu_draw_home(&ui->menu_view, ui->screen, &ui->menu, &ui->home_view);
