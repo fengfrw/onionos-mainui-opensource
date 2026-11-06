@@ -238,6 +238,32 @@ void mainui_grid_restore(MainUIViewport *view, int total, int selected, int colu
     *view = (MainUIViewport){total, selected, start, end};
 }
 
+void mainui_grid_move_stock(MainUIViewport *view, int horizontal, int columns, int rows, bool wrap)
+{
+    if (view->total <= 0 || !horizontal || columns <= 0 || rows <= 0) {
+        return;
+    }
+    int capacity = columns * rows, pages = (view->total + capacity - 1) / capacity;
+    int selected = view->selected < 0 ? 0 : view->selected;
+    int page = selected / capacity, row = selected % capacity / columns;
+    int column = selected % columns + (horizontal > 0 ? 1 : -1);
+    int target = page * capacity + row * columns + column;
+    if (column < 0 || column >= columns || target >= view->total) {
+        page += horizontal > 0 ? 1 : -1;
+        if (page < 0 || page >= pages) {
+            if (!wrap) {
+                return;
+            }
+            page = page < 0 ? pages - 1 : 0;
+        }
+        target = page * capacity + row * columns + (horizontal > 0 ? 0 : columns - 1);
+        if (target >= view->total) {
+            target = view->total - 1;
+        }
+    }
+    mainui_grid_restore(view, view->total, target, columns, rows);
+}
+
 void mainui_grid_move(MainUIViewport *view, int horizontal, int vertical, int pages, int columns,
                       int rows)
 {

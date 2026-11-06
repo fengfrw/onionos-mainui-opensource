@@ -37,4 +37,10 @@ const char *mainui_menu_icon(MainUIMenuSection section);
 void mainui_grid_restore(MainUIViewport *view, int total, int selected, int columns, int rows);
 void mainui_grid_move(MainUIViewport *view, int horizontal, int vertical, int pages, int columns,
                       int rows);
+/* Right (horizontal 1) or Left (-1) as stock's grid moves: along the row, and
+ * from its end to the same row's first console on the next page, or from its
+ * start to the same row's last on the page before, the last console when that
+ * page is short of it. Past the last page to the first and the reverse when
+ * wrap is set, else it stays. */
+void mainui_grid_move_stock(MainUIViewport *view, int horizontal, int columns, int rows, bool wrap);
 #endif

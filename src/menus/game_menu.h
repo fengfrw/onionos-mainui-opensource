@@ -1,16 +1,20 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 #ifndef MAINUI_GAME_MENU_H
 #define MAINUI_GAME_MENU_H
+#include "cJSON.h"
 #include "menus/context.h"
 
 /* The game-list context menus .tmp_update/config/game-menu.json can reorder
- * and hide. Apps, the console grids and the main menu are not among them. */
+ * and hide, and the console page's, which console-view.json's "menu" orders
+ * and hides the same way. Apps and the main menu are not among them. */
 typedef enum {
     MAINUI_GAME_MENU_ROMS,
     MAINUI_GAME_MENU_FAVORITES,
     MAINUI_GAME_MENU_RECENTS,
     MAINUI_GAME_MENU_SEARCH_RESULTS,
-    MAINUI_GAME_MENU_SECTIONS
+    MAINUI_GAME_MENU_SECTIONS, /* game-menu.json's sections end here */
+    MAINUI_GAME_MENU_CONSOLES = MAINUI_GAME_MENU_SECTIONS,
+    MAINUI_GAME_MENU_ALL
 } MainUIGameMenuSection;
 
 #define MAINUI_GAME_MENU_ITEMS 6
@@ -18,9 +22,9 @@ typedef enum {
 /* Per section, the IDs to show in order, as indices into that section's own
  * list of IDs. A section not configured keeps the menu exactly as built. */
 typedef struct {
-    bool configured[MAINUI_GAME_MENU_SECTIONS];
-    int count[MAINUI_GAME_MENU_SECTIONS];
-    int order[MAINUI_GAME_MENU_SECTIONS][MAINUI_GAME_MENU_ITEMS];
+    bool configured[MAINUI_GAME_MENU_ALL];
+    int count[MAINUI_GAME_MENU_ALL];
+    int order[MAINUI_GAME_MENU_ALL][MAINUI_GAME_MENU_ITEMS];
 } MainUIGameMenu;
 
 /* Nothing configured: every menu as built. */
@@ -30,6 +34,10 @@ void mainui_game_menu_defaults(MainUIGameMenu *menu);
  * that is missing or not an array keeps its default; unknown and repeated
  * IDs are skipped; an empty array means no menu. */
 bool mainui_game_menu_parse(MainUIGameMenu *menu, const char *text);
+/* One section's list of IDs, as the file's are read; anything but an array
+ * leaves the section as built. */
+void mainui_game_menu_parse_list(MainUIGameMenu *menu, MainUIGameMenuSection section,
+                                 const cJSON *list);
 /* Read directory/game-menu.json once; a malformed file logs one line. Never
  * writes the file. */
 void mainui_game_menu_load(MainUIGameMenu *menu, const char *directory);

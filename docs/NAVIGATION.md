@@ -40,6 +40,105 @@ The Games grid shows 4 columns by 2 rows per page, the Expert grid 3 by 3.
 
 **Differs from stock:** in stock MainUI, Right on the last console of the top row opens the next page at its top-left console. Here Right always takes the next console in order, which is the first console of the row below on the same page. Every console is then reached by pressing Right repeatedly, and the cursor never skips the rest of a page.
 
+With `"grid": {"navigation": "stock"}` in [`console-view.json`](#carousel-and-list), Right at the end of a row goes to the first console of the same row on the next page, and Left at its start to the same row's last console on the page before, as stock does from the top row; on a short page it lands on the last console.
+Past the last page Right goes round to the first, unless `"wrap": false`, which also stops Right and Left at the first and last console in the default navigation. Only the top row's move is known from stock; the lower rows follow the same rule.
+
+### Carousel and list
+
+`.tmp_update/config/console-view.json` can show the consoles of Games, Expert or both as a carousel or a list instead of the grid. The grid stays the default. As in `main-menu.json` and `game-menu.json`, comments (`//`, `/* */` and `#`) and trailing commas are allowed. Every key is optional:
+
+```json
+{
+  "games": "carousel",
+  "expert": "list",
+  "thumbs": "/mnt/SDCARD/Thumbs",
+  "count": true,
+  "menu": ["refresh_all", "refresh"],
+  "carousel": {
+    "labels": true,
+    "selection": "#FFFFFF38",
+    "selection_padding": 12,
+    "scale_unselected": 0.7,
+    "opacity_unselected": 0.5,
+    "gap": 40,
+    "offset_y": 0,
+    "animation": "slide",
+    "duration_ms": 180,
+    "wrap": true
+  },
+  "grid": { "navigation": "linear", "wrap": true },
+  "list": { "folder_icon": true, "thumbs": true }
+}
+```
+
+| Key | For | Values | Without it |
+| --- | --- | --- | --- |
+| `games`, `expert` | that section's console page | `grid`, `carousel` or `list`, in lowercase | `grid` |
+| `thumbs` | carousel and list | a folder of console pictures, below, with `_default.png` for consoles without their own | the theme's icons |
+| `count` | carousel and list | `false` hides the number of games | shown |
+| `menu` | every view, also the grid | the context menu's rows, below | the default menu |
+| `carousel.labels` | carousel | `false` hides the console names | shown |
+| `carousel.selection` | carousel | `false` or `""` for no background, or `"#RRGGBB"` (opaque) or `"#RRGGBBAA"` for a thumbnail's | the theme's, or the plain default, about 12% of the selected names' colour |
+| `carousel.selection_padding` | carousel | pixels of plain background round the selected thumbnail, 0 to 40 | 12 |
+| `carousel.scale_unselected` | carousel | the neighbours' size, thumbnails and theme icons' cells alike, 0.6 to 1 of the selected one's | 0.7 |
+| `carousel.opacity_unselected` | carousel | the neighbours' pictures' opacity, 0 (not drawn) to 1 (as the selected one) | 0.5 |
+| `carousel.gap` | carousel | pixels between a thumbnail and the next console, 0 to 100 | 40 |
+| `carousel.offset_y` | carousel | pixels to move the pictures, names and counts down, or up when negative, -60 to 60 | 0 |
+| `carousel.animation` | carousel | `"none"`: a new selection shows at once | `"slide"`: it slides into place |
+| `carousel.easing` | carousel | `"smooth"`: ease in and out during a slide, instead of the faster-starting default | default ease-out |
+| `carousel.duration_ms` | carousel | how long a slide takes, 80 to 500 ms | 180 |
+| `carousel.repeat_ms` | carousel | least ms between moves with Right and Left, 0 to 400; while slides are on, a move also waits for the slide | 0: one move per slide, or with slides off no limit |
+| `carousel.vsync` | carousel | `false`: draw each frame without waiting for the screen's refresh. On the device only; the wait stops by itself where the screen refuses it or it takes over 50 ms | `true`: wait for the refresh before each frame is copied |
+| `carousel.wrap` | carousel | `false`: nothing left of the first console or right of the last, and Right, Left, R2 and L2 stop there | `true`: the row goes round, the last consoles left of the first, and the reverse |
+| `grid.navigation` | grid | `"stock"`: Right and Left page at a row's ends, below | `"linear"` |
+| `grid.wrap` | grid | `false`: Right and Left stop at the first and last console | `true` |
+| `list.folder_icon` | list | `false` hides the folder icon | shown |
+| `list.thumbs` | list | `false`: no console covers in the list, though the carousel still shows its pictures | shown with `thumbs` |
+
+Any other value is taken as missing; numbers outside their range are kept to it.
+`thumbs` is written as paths in `config.json` are, from `/mnt/SDCARD/` or from the SD card's root, and holds one PNG per console named by its folder in `Emu` in lowercase: `sfc.png` for `Emu/SFC`, `fc.png` for `Emu/FC`. A console without one shows `_default.png` from the same folder, or, without that either, its theme icon, which the list also shows as its cover then.
+`menu` orders and hides the console page's context menu as [`game-menu.json`](#game-list-context-menus) does game lists': `refresh_all` is Refresh all roms, `refresh` Refresh roms (never for the Search console), and `[]` means no menu.
+
+The carousel shows the selected console in the middle and two neighbours either side, the next ones cut by the screen's edges, in the grid's order, and by default round the ends, each console once however few there are.
+A console with a thumbnail shows it on a plain, faint background in the colour of the selected names, or in the `selection` colour, with its name beneath and, once the console has a ROM list cache, its number of games beneath that, such as `(4562)`, not in bold.
+Thumbnails are at most 560 by 260 pixels, or 560 by 300 with the name or the count hidden: a larger one is scaled down to fit, keeping its proportions, and a smaller one is never enlarged. With nothing beneath, the picture is centred.
+The room for the name and the count comes from the theme's grid font (Expert's in Expert): where the tallest picture and its lines would not fit between the header and the footer, the row moves up or the picture gets smaller, so the lines never overlap the picture or the footer.
+A console without one is drawn as a cell of the grid: the theme's tile (`skin/bg-game-item-f.png` for the selected console and `-n.png` for the others in Games, `skin/bg-ra-list-item.png` for the selected one in Expert), its icon and name placed as the grid places them, and the number of games beneath. Its name and the count use the grid's colours.
+`"selection": false` drops the tiles and the plain background alike.
+The neighbours show at `scale_unselected` of their size, thumbnails and theme icons' cells alike, a cell's tile and icon together, and their pictures at `opacity_unselected`, on the same middle line as the selected one.
+Names and numbers of games are never scaled: only the selected console shows them, at full size.
+The pictures are read and scaled in the background, nearest first, and up to 16 consoles' are kept while MainUI runs, also through the main menu and the grid: moving never waits for a picture.
+On the device the carousel first shows once the selected console and its two nearest neighbours are ready, and it is drawn at most 25 times a second. A menu or message opened before then shows at once, over the carousel without its pictures.
+With `"animation": "slide"`, moving slides the row from where it was into its new place over `duration_ms`, slowing at the end (or easing both in and out with `"easing": "smooth"`); the console moved to takes the selected size and opacity halfway. A press during a slide carries on from where the row is, and round the ends a console comes in from the side the row moves from.
+The name and number of games stay centred beneath the selected console while the pictures slide, and change to the new selection halfway through the slide, as it takes the selected size, or at once without a slide.
+The count is read from the cache only when a console is selected. The counter at the bottom right gives the console's position instead of the page.
+Right and Left move to the next and previous console, wrapping round at the ends as in the grid, or stopping there with `"wrap": false`.
+Right and Left move once per slide while slides are on, or every `repeat_ms` when that is longer, and every `repeat_ms` with slides off. The first press moves at once; a press made during a slide waits for it to end instead of being lost, and a held button's repeats leave nothing to catch up on once it is released.
+R2 and L2 move three consoles, wrapping round too or stopping at the ends, jumping there without a slide. Up and Down do nothing.
+
+The list shows the consoles as a game list does its games, with the theme's rows, row count (`.romListRows`), selection and font, and the theme's folder icon for each console. Names are shown without leading and trailing spaces, keeping the place those spaces sort them to.
+A selected name too long for its row scrolls as titles do in game lists (`.romListTitleScroll`). With `thumbs`, the selected console's thumbnail shows where a game's cover does, read and kept as covers are, unless `list.thumbs` is `false`.
+Up and Down move to the next and previous console, wrapping round at the ends; Left and Right, R and L and R2 and L2 move a page.
+The counter at the bottom right gives the selected console's number of games, such as `(762)`, as for a folder, once the console has a ROM list cache, and nothing without one.
+
+In both, A opens the console, B goes back, and every other button acts as in the grid.
+A file that is not a JSON object shows the grid, which the log notes once. The file is read when MainUI starts and never written.
+
+#### Console thumbnails
+
+A transparent PNG of 500 by 720 pixels suits both views:
+
+| View | Shown at |
+| --- | --- |
+| List (250 by 360 cover area) | 250 by 360 |
+| Carousel, name and count shown | 181 by 260 |
+| Carousel, name or count hidden | 208 by 300 |
+| Carousel neighbour, at the default 0.7 | 127 by 182 |
+
+Pictures are only ever scaled down, keeping their proportions, never cropped. Both views scale by picking pixels, so fine lines and small text can look rough.
+Transparent padding counts as part of the picture, so keep it to a few percent: unused space makes the console look smaller.
+A layout that works: the console's name or logo in the top fifth, the console large below it, a little room at the bottom. Wide consoles come out shorter than handhelds; a steeper angle, or a controller beneath, evens out the row.
+
 ## Lists
 
 This applies to ROM lists, Favorites, Recents, Apps and Search results.
@@ -95,7 +194,7 @@ A menu shows the rows listed for its section, in that order, that the selection 
 `favorite` is Add to favorites or Remove Favorite, and `move` is Move here while a Favorite is being moved. A row left out is hidden; an empty list means that section has no menu, and Select or Menu does nothing there.
 
 A missing section keeps its default menu. Unknown and repeated IDs are skipped. A missing file gives the default menus, and so does a file that is not a JSON object, which the log notes once (`[menu] ... game-menu.json is not a JSON object`).
-The file is read when MainUI starts and never written. Confirmations still ask as before. The main menu's context menu (`main-menu.json`), Apps and the console grids are not affected.
+The file is read when MainUI starts and never written. Confirmations still ask as before. The main menu's context menu (`main-menu.json`) and Apps are not affected; the console page's menu is set with `menu` in [`console-view.json`](#carousel-and-list).
 
 ## Game Info's media gallery
 

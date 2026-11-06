@@ -1303,6 +1303,37 @@ static bool cache_needs_repair(const char *file, const char *table)
     return missing || (result & 255) == SQLITE_CORRUPT || (result & 255) == SQLITE_NOTADB;
 }
 
+long long mainui_catalog_game_count(const MainUICatalog *catalog, int system)
+{
+    if (!catalog || system < 0 || system >= catalog->pages[0].count) {
+        return -1;
+    }
+    const MainUIEntry *entry = &catalog->pages[0].entries[system];
+    const char *name = strrchr(entry->path, '/');
+    name = name ? name + 1 : entry->path;
+    char file[MAINUI_PATH_MAX];
+    int length = snprintf(file, sizeof file, "%s/%s_cache6.db", entry->path, name);
+    if (length < 0 || length >= (int)sizeof file) {
+        return -1;
+    }
+    sqlite3 *db = NULL;
+    sqlite3_stmt *statement = NULL;
+    long long count = -1;
+    /* This count runs on the UI thread: reject WAL and cap untrusted views
+     * with the same read-only SQLite VM budget as normal cache browsing. */
+    int budget = 20000;
+    char *sql = sqlite3_mprintf("SELECT count(*) FROM \"%w_roms\" WHERE type = 0", name);
+    if (sql && mainui_cache_readonly_open(&db, file, &budget) &&
+        sqlite3_prepare_v2(db, sql, -1, &statement, NULL) == SQLITE_OK &&
+        sqlite3_step(statement) == SQLITE_ROW) {
+        count = sqlite3_column_int64(statement, 0);
+    }
+    sqlite3_free(sql);
+    sqlite3_finalize(statement);
+    sqlite3_close(db);
+    return count;
+}
+
 bool mainui_search_root(const char *sd, const char *root)
 {
     char path[MAINUI_PATH_MAX];

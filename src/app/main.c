@@ -36,9 +36,10 @@ static int run(int argc, char **argv, MainUIApp *ui)
             break;
         }
         mainui_timing_interim(60000);
+        mainui_screen_carousel_step(ui, SDL_GetTicks());
         mainui_prepare_frame(ui);
         bool unchanged = ui->draw_frame && mainui_frame_current(ui, SDL_GetTicks());
-        if (ui->draw_frame && !unchanged) {
+        if (ui->draw_frame && !unchanged && !mainui_carousel_frame_deferred(ui, SDL_GetTicks())) {
             struct timespec draw_start = mainui_timing_start();
             bool drawn = mainui_draw_frame(ui);
             /* finish accumulates through mainui_count_add, with no clock reads

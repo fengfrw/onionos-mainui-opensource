@@ -1,5 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 #include "support.h"
+#include "ui/artwork.h"
+#include "ui/image_scale.h"
 #include "ui/panels.h"
 #include "ui/theme.h"
 #ifdef NDEBUG
@@ -36,6 +38,78 @@ static void initialize(MainUITheme *theme, const char *active, const char *fallb
     strcpy(theme->fallback, fallback);
 }
 
+/* Bilinear scaling, as for Carousel artwork: sizes,
+ * averages and transparent edges. */
+static void image_scale_tests(void)
+{
+    SDL_Surface *image = SDL_CreateRGBSurface(SDL_SWSURFACE, 4, 4, 32, 0x00ff0000, 0x0000ff00,
+                                              0x000000ff, 0xff000000);
+    assert(image);
+    for (int y = 0; y < 4; y++) {
+        Uint32 *row = (Uint32 *)((Uint8 *)image->pixels + y * image->pitch);
+        for (int x = 0; x < 4; x++) {
+            row[x] = SDL_MapRGBA(image->format, (x + y) % 2 ? 255 : 0, (x + y) % 2 ? 255 : 0,
+                                 (x + y) % 2 ? 255 : 0, 255);
+        }
+    }
+    /* Half size samples between the pixels: a checkerboard becomes grey. */
+    SDL_Surface *half = mainui_image_bilinear_copy(image, 2, 2);
+    assert(half && half->w == 2 && half->h == 2 && half->format->Amask);
+    for (int y = 0; y < 2; y++) {
+        Uint32 *row = (Uint32 *)((Uint8 *)half->pixels + y * half->pitch);
+        for (int x = 0; x < 2; x++) {
+            Uint8 r, g, b, a;
+            SDL_GetRGBA(row[x], half->format, &r, &g, &b, &a);
+            assert(r == 128 && g == 128 && b == 128 && a == 255);
+        }
+    }
+    SDL_FreeSurface(half);
+    half = mainui_image_fit(image, 2, 3);
+    assert(half && half->w == 2 && half->h == 2);
+    SDL_FreeSurface(half);
+    assert(!mainui_image_fit(image, 8, 8)); /* Fitting never enlarges. */
+    SDL_Surface *up = mainui_image_bilinear_copy(image, 8, 8);
+    assert(up && up->w == 8 && up->h == 8);
+    SDL_FreeSurface(up);
+    SDL_FreeSurface(image);
+
+    image = SDL_CreateRGBSurface(SDL_SWSURFACE, 2, 2, 32, 0x00ff0000, 0x0000ff00, 0x000000ff,
+                                 0xff000000);
+    assert(image);
+    Uint32 *row = (Uint32 *)image->pixels;
+    row[0] = SDL_MapRGBA(image->format, 255, 0, 0, 255);
+    row[1] = SDL_MapRGBA(image->format, 0, 255, 0, 0);
+    row = (Uint32 *)((Uint8 *)image->pixels + image->pitch);
+    row[0] = row[1] = SDL_MapRGBA(image->format, 0, 255, 0, 0);
+    /* Transparent green beside opaque red leaves no green fringe, reduced
+     * or enlarged (the middle pixel is quarter opaque red). */
+    SDL_Surface *alpha = mainui_image_bilinear_copy(image, 1, 1);
+    assert(alpha && alpha->format->Amask);
+    Uint8 r, g, b, a;
+    SDL_GetRGBA(*(Uint32 *)alpha->pixels, alpha->format, &r, &g, &b, &a);
+    assert(r == 255 && g == 0 && b == 0 && a == 64);
+    SDL_FreeSurface(alpha);
+    SDL_Surface *enlarged = mainui_image_bilinear_copy(image, 3, 3);
+    assert(enlarged && enlarged->w == 3 && enlarged->h == 3);
+    SDL_GetRGBA(*(Uint32 *)((Uint8 *)enlarged->pixels + enlarged->pitch + 4), enlarged->format, &r,
+                &g, &b, &a);
+    assert(r == 255 && g == 0 && b == 0 && a == 64);
+    SDL_FreeSurface(enlarged);
+    SDL_FreeSurface(image);
+    /* A 256x240 picture enlarged to 480x360, as by a 4:3 pixel aspect
+     * correction, keeps a flat colour. */
+    image = SDL_CreateRGBSurface(SDL_SWSURFACE, 256, 240, 32, 0x00ff0000, 0x0000ff00, 0x000000ff,
+                                 0xff000000);
+    assert(image);
+    SDL_FillRect(image, NULL, SDL_MapRGBA(image->format, 25, 65, 125, 255));
+    enlarged = mainui_image_bilinear_copy(image, 480, 360);
+    assert(enlarged && enlarged->w == 480 && enlarged->h == 360);
+    SDL_GetRGBA(*(Uint32 *)enlarged->pixels, enlarged->format, &r, &g, &b, &a);
+    assert(r == 25 && g == 65 && b == 125 && a == 255);
+    SDL_FreeSurface(enlarged);
+    SDL_FreeSurface(image);
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
@@ -43,6 +117,22 @@ int main(int argc, char **argv)
         return 2;
     }
     assert(SDL_Init(0) == 0);
+    image_scale_tests();
+    /* Carousel fading requires an alpha channel even for opaque RGB art. */
+    SDL_Surface *rgb = SDL_CreateRGBSurface(SDL_SWSURFACE, 12, 8, 24, 0xff0000, 0xff00, 0xff, 0);
+    assert(rgb);
+    SDL_Surface *converted = mainui_artwork_software(rgb);
+    assert(converted && converted->format->Amask != 0);
+    mainui_artwork_blend(converted);
+    SDL_FreeSurface(converted);
+    SDL_FreeSurface(rgb);
+    SDL_Surface *rgba =
+        SDL_CreateRGBSurface(SDL_SWSURFACE, 12, 8, 32, 0xff0000, 0xff00, 0xff, 0xff000000);
+    assert(rgba);
+    converted = mainui_artwork_software(rgba);
+    assert(converted && converted->format->Amask != 0);
+    SDL_FreeSurface(converted);
+    SDL_FreeSurface(rgba);
     char root[256], active[512], fallback[512], path[1024];
     snprintf(root, sizeof root, "build/artwork-check-%ld", (long)getpid());
     assert(mkdir_0755(root) == 0);

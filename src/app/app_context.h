@@ -7,6 +7,7 @@
 #include "app/settings_page.h"
 #include "catalog/favorite_edit.h"
 #include "core/letter_jump.h"
+#include "menus/console_view.h"
 #include "menus/game_menu.h"
 #include "ui/list_video.h"
 #include "ui/menu_view.h"
@@ -36,6 +37,7 @@ typedef struct {
     MainUIPreview preview;
     bool preview_sync_once;     /* Include selected artwork in the first list frame. */
     MainUIListVideo list_video; /* the selected game's video in place of its cover */
+    bool carousel_offscreen;    /* completed prefetch changed no visible icon */
     bool presented_video;       /* the last full frame showed a video frame */
 
     const char *dir;
@@ -96,7 +98,17 @@ typedef struct {
     bool language_open;
     MainUIContext context;
     MainUIContext home_context;
-    MainUIGameMenu game_menu; /* game-menu.json, read once at startup */
+    MainUIGameMenu game_menu;          /* game-menu.json, read once at startup */
+    MainUIConsoleView console_view;    /* console-view.json, read once at startup */
+    Uint32 carousel_last_direction_at; /* Last accepted Carousel Left/Right movement. */
+    bool carousel_direction_paced;     /* Timestamp valid, including tick zero. */
+    int carousel_pending_direction;    /* At most one deferred Left (-1) or Right (+1). */
+    bool carousel_pending_tap;         /* A released tap survives; held repeats do not. */
+    bool labels_consoles;              /* the cached row labels are the console page's */
+    /* The listed consoles' counter: the selected one's games, -1 for no cache. */
+    const MainUICatalog *console_games_catalog;
+    int console_games_index;
+    long long console_games;
     cJSON *context_record;
     bool context_open;
     int confirmation;
@@ -165,6 +177,7 @@ typedef struct {
     bool systems_drawn;
     Uint32 active_at, presented_at;
     Uint32 last_screen_present_at; /* Every present, including partial video/row updates. */
+    bool carousel_frame_pending;   /* A change waiting for the next carousel frame deadline. */
     int presented_battery, presented_wifi_signal;
     bool presented_charging;
     bool presented_wifi_online, presented_hotspot;

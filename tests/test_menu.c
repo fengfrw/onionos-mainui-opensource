@@ -71,6 +71,51 @@ int mainui_suite_menu(void)
     mainui_grid_restore(&view, 0, 12, 4, 2);
     mainui_grid_move(&view, 1, 1, 1, 4, 2);
     assert(view.selected == -1 && view.end == -1);
+    /* Stock's Right and Left: Games 4x2, 16 consoles; index 3 is the top
+     * right of the first page. */
+    mainui_grid_restore(&view, 16, 3, 4, 2);
+    mainui_grid_move(&view, 1, 0, 0, 4, 2);
+    assert(view.selected == 4);
+    mainui_grid_restore(&view, 16, 3, 4, 2);
+    mainui_grid_move_stock(&view, 1, 4, 2, true);
+    assert(view.selected == 8 && view.start == 8);
+    mainui_grid_move_stock(&view, -1, 4, 2, true); /* back to the row's end */
+    assert(view.selected == 3 && view.start == 0);
+    mainui_grid_restore(&view, 16, 1, 4, 2); /* along the row */
+    mainui_grid_move_stock(&view, 1, 4, 2, true);
+    assert(view.selected == 2);
+    mainui_grid_restore(&view, 16, 7, 4, 2); /* bottom row: same row */
+    mainui_grid_move_stock(&view, 1, 4, 2, true);
+    assert(view.selected == 12);
+    /* Past the last page round to the first, or, without wrap, nowhere. */
+    mainui_grid_restore(&view, 16, 15, 4, 2);
+    mainui_grid_move_stock(&view, 1, 4, 2, true);
+    assert(view.selected == 4 && view.start == 0);
+    mainui_grid_restore(&view, 16, 15, 4, 2);
+    mainui_grid_move_stock(&view, 1, 4, 2, false);
+    assert(view.selected == 15);
+    mainui_grid_restore(&view, 16, 0, 4, 2);
+    mainui_grid_move_stock(&view, -1, 4, 2, false);
+    assert(view.selected == 0);
+    mainui_grid_move_stock(&view, -1, 4, 2, true); /* to the last page's top row end */
+    assert(view.selected == 11 && view.start == 8);
+    /* A short last page: 10 consoles. The row's end is its last console,
+     * and a missing row lands on the last console. */
+    mainui_grid_restore(&view, 10, 9, 4, 2);
+    mainui_grid_move_stock(&view, 1, 4, 2, true);
+    assert(view.selected == 0);
+    mainui_grid_restore(&view, 10, 7, 4, 2);
+    mainui_grid_move_stock(&view, 1, 4, 2, true);
+    assert(view.selected == 9);
+    mainui_grid_restore(&view, 10, 4, 4, 2);
+    mainui_grid_move_stock(&view, -1, 4, 2, true);
+    assert(view.selected == 9);
+    /* Expert's 3x3. */
+    mainui_grid_restore(&view, 20, 5, 3, 3);
+    mainui_grid_move_stock(&view, 1, 3, 3, true);
+    assert(view.selected == 12 && view.start == 9);
+    mainui_grid_move_stock(&view, -1, 3, 3, true);
+    assert(view.selected == 5);
     puts("Menu configuration and grid navigation checks passed");
     return 0;
 }

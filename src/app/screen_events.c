@@ -783,6 +783,7 @@ static bool screen_context_open_key(MainUIApp *ui, SDLKey key)
     }
     else if (ui->catalog && !ui->catalog->depth) {
         mainui_context_rows(&ui->context, grid_actions, refreshable ? 2 : 1);
+        mainui_game_menu_apply(&ui->context, &ui->console_view.menu, MAINUI_GAME_MENU_CONSOLES);
     }
     else {
         if (ui->catalog) {
@@ -983,11 +984,89 @@ bool mainui_screen_list_key(MainUIApp *ui, SDLKey key)
         if (key == SDLK_ESCAPE) {
             ui->home = true;
         }
+        else if (mainui_console_mode(ui) == MAINUI_CONSOLE_LIST) {
+            /* Listed, as a game list: Up and Down one console, wrapping;
+             * Left and Right, R and L and R2 and L2 a page. */
+            int rows = ui->config.rows;
+            int delta = key == SDLK_UP                                                       ? -1
+                        : key == SDLK_DOWN                                                   ? 1
+                        : key == SDLK_LEFT || key == SDLK_PAGEUP || key == SDLK_TAB          ? -rows
+                        : key == SDLK_RIGHT || key == SDLK_PAGEDOWN || key == SDLK_BACKSPACE ? rows
+                                                                                             : 0;
+            if (delta) {
+                mainui_viewport_move(&ui->view, rows, delta, delta == 1 || delta == -1);
+            }
+        }
         else {
+            /* The carousel is one row: Up and Down do nothing there. */
+            bool carousel = mainui_console_mode(ui) == MAINUI_CONSOLE_CAROUSEL;
+            int horizontal = (key == SDLK_RIGHT) - (key == SDLK_LEFT);
+            /* The grid's Right and Left as console-view.json's "grid" sets
+             * them: stock's pages, and no wrapping at the ends. */
+            if (!carousel && horizontal && ui->console_view.grid_stock) {
+                mainui_grid_move_stock(&ui->view, horizontal, ui->catalog == ui->expert ? 3 : 4,
+                                       ui->catalog == ui->expert ? 3 : 2,
+                                       !ui->console_view.grid_no_wrap);
+                return true;
+            }
+            if (!carousel && ui->console_view.grid_no_wrap &&
+                ((horizontal > 0 && ui->view.selected >= ui->view.total - 1) ||
+                 (horizontal < 0 && ui->view.selected <= 0))) {
+                return true;
+            }
+            if (carousel) {
+                /* Which way the row moves, for its slide round the ends. */
+                int way = horizontal + (key == SDLK_BACKSPACE || key == SDLK_PAGEDOWN) -
+                          (key == SDLK_TAB || key == SDLK_PAGEUP);
+                if (way) {
+                    ui->menu_view.carousel_direction = way;
+                }
+            }
+            /* With "wrap": false the carousel stops at its ends: Right on
+             * the last console and Left on the first do nothing. */
+            bool stops = carousel && !ui->console_view.carousel_wrap;
+            if (stops && ((horizontal > 0 && ui->view.selected >= ui->view.total - 1) ||
+                          (horizontal < 0 && ui->view.selected <= 0))) {
+                return true;
+            }
+            if (carousel && (key == SDLK_TAB || key == SDLK_BACKSPACE)) {
+                /* L2/R2 move three consoles, as many as show beside the
+                 * selected one, wrapping round as Left and Right do, or
+                 * stopping at the ends without "wrap"; L1/R1 move a grid
+                 * page (8 or 9), as R2/L2 do in the grid. */
+                int jump = key == SDLK_BACKSPACE ? 3 : -3;
+                int target = ui->view.selected + jump;
+                if (stops) {
+                    target = target < 0                 ? 0
+                             : target >= ui->view.total ? ui->view.total - 1
+                                                        : target;
+                }
+                else if (ui->view.total > 0) {
+                    target = ((target % ui->view.total) + ui->view.total) % ui->view.total;
+                }
+                if (target == ui->view.selected) {
+                    return true;
+                }
+                /* A three-console shoulder jump replaces the visible window.
+                 * Do not animate it as a one-console slide: the previous
+                 * selected artwork may no longer be among the five slots. */
+                ui->menu_view.carousel_snap = true;
+                mainui_grid_restore(&ui->view, ui->view.total, target,
+                                    ui->catalog == ui->expert ? 3 : 4,
+                                    ui->catalog == ui->expert ? 3 : 2);
+                return true;
+            }
+            int before = ui->view.selected;
             mainui_grid_move(&ui->view, (key == SDLK_RIGHT) - (key == SDLK_LEFT),
-                             (key == SDLK_DOWN) - (key == SDLK_UP),
+                             carousel ? 0 : (key == SDLK_DOWN) - (key == SDLK_UP),
+                             /* L2/R2, as stock (the carousel's are above). */
                              (key == SDLK_BACKSPACE) - (key == SDLK_TAB),
                              ui->catalog == ui->expert ? 3 : 4, ui->catalog == ui->expert ? 3 : 2);
+            if (carousel && (key == SDLK_PAGEUP || key == SDLK_PAGEDOWN) &&
+                ui->view.selected != before) {
+                /* L1/R1 page jumps also change the entire visible window. */
+                ui->menu_view.carousel_snap = true;
+            }
         }
         return true;
     }
@@ -1248,6 +1327,9 @@ static bool x_bound(const MainUIApp *ui)
     return shortcut == MAINUI_SHORTCUT_FAVORITE || shortcut == MAINUI_SHORTCUT_GAME_OPTIONS;
 }
 
+static int carousel_pace(const MainUIApp *ui);
+static bool carousel_input_active(const MainUIApp *ui);
+
 static void dispatch_key(MainUIApp *ui, SDL_Event *event)
 {
     SDLKey pressed = mainui_input_key(event->key.keysym.sym);
@@ -1412,7 +1494,121 @@ static void dispatch_key(MainUIApp *ui, SDL_Event *event)
     if (mainui_screen_home_key(ui, key, requested_section)) {
         return;
     }
+    /* A rapid separate tap is deferred rather than lost. Held SDL repeats
+     * may also reserve one move, but release cancels that reservation. */
+    int pace = carousel_pace(ui);
+    bool carousel_direction =
+        carousel_input_active(ui) && (key == SDLK_LEFT || key == SDLK_RIGHT) && pace > 0;
+    Uint32 now = carousel_direction ? SDL_GetTicks() : 0;
+    if (carousel_direction) {
+        int direction = key == SDLK_RIGHT ? 1 : -1;
+        bool waiting =
+            ui->carousel_direction_paced && (Sint32)(now - ui->carousel_last_direction_at) < pace;
+        if (mainui_menu_carousel_sliding(&ui->menu_view) &&
+            (Sint32)(now - ui->menu_view.slide_start) < ui->console_view.duration_ms) {
+            waiting = true;
+        }
+        if (waiting) {
+            if (!was_held || !ui->carousel_pending_tap ||
+                ui->carousel_pending_direction != direction) {
+                ui->carousel_pending_direction = direction;
+                ui->carousel_pending_tap = !was_held;
+            }
+            return;
+        }
+        /* A new accepted movement supersedes an older queued direction. */
+        ui->carousel_pending_direction = 0;
+        ui->carousel_pending_tap = false;
+    }
+    else if (key != SDLK_LEFT && key != SDLK_RIGHT) {
+        /* A shoulder jump, B, A, etc. invalidates the queued movement. */
+        ui->carousel_pending_direction = 0;
+        ui->carousel_pending_tap = false;
+    }
+    int selected = ui->view.selected;
     mainui_screen_list_key(ui, key);
+    if (carousel_direction && ui->view.selected != selected) {
+        ui->carousel_last_direction_at = now;
+        ui->carousel_direction_paced = true;
+    }
+    else if (mainui_console_mode(ui) != MAINUI_CONSOLE_CAROUSEL) {
+        ui->carousel_direction_paced = false;
+    }
+}
+
+/* The Carousel keeps only one pending direction. A completed tap is kept
+ * until it can move; a held repeat is discarded on release. This avoids
+ * both dropped deliberate taps and an unlimited backlog of repeats. */
+static int carousel_pace(const MainUIApp *ui)
+{
+    int pace = ui->console_view.repeat_ms;
+    if (ui->console_view.slide && ui->console_view.duration_ms > pace) {
+        pace = ui->console_view.duration_ms;
+    }
+    return pace;
+}
+
+static bool carousel_input_active(const MainUIApp *ui)
+{
+    return !ui->input_script && !ui->context_open && !ui->settings_open &&
+           !ui->settings_page.open && !ui->name_input.open && !ui->search_keyboard &&
+           !ui->details.open && ui->confirmation < 0 && !*ui->message_title &&
+           mainui_console_mode(ui) == MAINUI_CONSOLE_CAROUSEL;
+}
+
+int mainui_screen_carousel_due(const MainUIApp *ui, Uint32 now)
+{
+    if (!ui->carousel_pending_direction || !carousel_input_active(ui)) {
+        return -1;
+    }
+    int remaining = 0;
+    if (ui->carousel_direction_paced) {
+        Sint32 until = (Sint32)(ui->carousel_last_direction_at + (Uint32)carousel_pace(ui) - now);
+        if (until > remaining) {
+            remaining = until;
+        }
+    }
+    /* The animation starts on the first drawn frame, not at keydown. Avoid
+     * beginning a second slide while the first is still visible. */
+    if (mainui_menu_carousel_sliding(&ui->menu_view)) {
+        Sint32 until =
+            (Sint32)(ui->menu_view.slide_start + (Uint32)ui->console_view.duration_ms - now);
+        if (until > remaining) {
+            remaining = until;
+        }
+    }
+    /* Wait for the previous selection to be drawn before consuming the
+     * pending move; the render loop will wake again after the frame. */
+    if (ui->menu_view.cached_start == MAINUI_MENU_VIEW_CAROUSEL &&
+        ui->menu_view.slid_to != ui->view.selected && remaining < 16) {
+        remaining = 16;
+    }
+    return remaining;
+}
+
+void mainui_screen_carousel_step(MainUIApp *ui, Uint32 now)
+{
+    if (!ui->carousel_pending_direction) {
+        return;
+    }
+    if (!carousel_input_active(ui)) {
+        ui->carousel_pending_direction = 0;
+        ui->carousel_pending_tap = false;
+        ui->carousel_direction_paced = false;
+        return;
+    }
+    if (mainui_screen_carousel_due(ui, now) > 0) {
+        return;
+    }
+    int direction = ui->carousel_pending_direction;
+    ui->carousel_pending_direction = 0;
+    ui->carousel_pending_tap = false;
+    int selected = ui->view.selected;
+    mainui_screen_list_key(ui, direction > 0 ? SDLK_RIGHT : SDLK_LEFT);
+    if (ui->view.selected != selected) {
+        ui->carousel_last_direction_at = now;
+        ui->carousel_direction_paced = true;
+    }
 }
 
 /* Keymon sends no Menu after Select with L2 or R2 (Start not held) where
@@ -1519,6 +1715,8 @@ bool mainui_dispatch_event(MainUIApp *ui, SDL_Event *event)
         /* Lost keyup events must not leave a modifier/chord stuck after Alt-Tab.
          * A pending confirmation is cancelled: its key state is unknown now. */
         memset(ui->held, 0, sizeof ui->held);
+        ui->carousel_pending_direction = 0;
+        ui->carousel_pending_tap = false;
         /* Their releases would be taken for presses. */
         ui->x_armed = ui->y_armed = ui->select_armed = ui->start_armed = false;
         ui->select_brightness = false;
@@ -1532,6 +1730,11 @@ bool mainui_dispatch_event(MainUIApp *ui, SDL_Event *event)
         SDLKey released = mainui_input_key(event->key.keysym.sym);
         if (released >= 0 && released < SDLK_LAST) {
             ui->held[released] = false;
+        }
+        if (!ui->carousel_pending_tap &&
+            ((released == SDLK_LEFT && ui->carousel_pending_direction < 0) ||
+             (released == SDLK_RIGHT && ui->carousel_pending_direction > 0))) {
+            ui->carousel_pending_direction = 0;
         }
         /* Keymon's Menu after a Select release is ignored, but only when it
          * sends one: else a real Menu shortly after would be. */

@@ -1,12 +1,14 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 #include "app/loop.h"
 #include "app/render.h"
+#include "app/screen_events.h"
 #include "localization/language.h"
 #include "platform/audio.h"
 #include "platform/input.h"
 #include "platform/launch.h"
 #include "platform/system_config.h"
 #include "platform/timing.h"
+#include "ui/carousel_worker.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -257,6 +259,18 @@ bool mainui_poll_jobs(MainUIApp *ui)
 
 bool mainui_reap_jobs(MainUIApp *ui)
 {
+    bool handled = false;
+    bool carousel_shown = ui->catalog && !ui->catalog->depth && !ui->library && !ui->home &&
+                          mainui_console_mode(ui) == MAINUI_CONSOLE_CAROUSEL;
+    bool visible = mainui_menu_carousel_service(
+        &ui->menu_view, carousel_shown ? ui->catalog : NULL, carousel_shown ? &ui->view : NULL,
+        carousel_shown ? &ui->console_view : NULL, &handled);
+    if (handled && carousel_shown) {
+        ui->carousel_offscreen = !visible;
+        if (visible) {
+            ui->idle_tick = false;
+        }
+    }
     if (ui->launch_pending && !ui->snapshot) {
         mainui_mark(MAINUI_MARK_HANDOFF);
         return false;
@@ -428,6 +442,27 @@ int mainui_wait_interval(const MainUIApp *ui, Uint32 now)
         if (until > 0 && until < interval) {
             interval = (int)until;
         }
+    }
+    /* Wake for a queued tap even after the slide's 40 ms repaint ticks end. */
+    int carousel_due = mainui_screen_carousel_due(ui, now);
+    if (carousel_due >= 0 && carousel_due < interval) {
+        interval = carousel_due > 0 ? carousel_due : 1;
+    }
+    /* A coalesced Carousel update must still repaint at its deadline even
+     * if the user stops pressing keys before another input event arrives. */
+    if (ui->carousel_frame_pending) {
+        Sint32 due = (Sint32)(ui->last_screen_present_at + MAINUI_MARQUEE_FRAME_MS - now);
+        if (due <= 0) {
+            due = 1;
+        }
+        if (due < interval) {
+            interval = due;
+        }
+    }
+    /* The console carousel's slide, at the title's pace while it lasts. */
+    if (mainui_menu_carousel_sliding(&ui->menu_view) &&
+        mainui_console_mode(ui) == MAINUI_CONSOLE_CAROUSEL && interval > MAINUI_MARQUEE_FRAME_MS) {
+        interval = MAINUI_MARQUEE_FRAME_MS;
     }
     /* A playing video wakes when its next decoded frame is due; the decoder
      * posts an event for a frame decoded later. */
@@ -611,11 +646,16 @@ bool mainui_wait_event(MainUIApp *ui, SDL_Event *event)
     }
     /* A video's frames are not input: a list's preview keeps its partial
      * frames, and the gallery redraws for them anyway. */
-    ui->idle_tick = event->type == SDL_USEREVENT && (event->user.code == MAINUI_TICK_CODE ||
-                                                     event->user.code == MAINUI_STATUS_CODE ||
-                                                     event->user.code == MAINUI_VIDEO_CODE);
+    ui->idle_tick =
+        event->type == SDL_USEREVENT &&
+        (event->user.code == MAINUI_TICK_CODE || event->user.code == MAINUI_STATUS_CODE ||
+         event->user.code == MAINUI_VIDEO_CODE || event->user.code == MAINUI_CAROUSEL_READY_CODE);
     ui->video_wake = event->type == SDL_USEREVENT && event->user.code == MAINUI_VIDEO_CODE;
-    if (!ui->idle_tick) {
+    if (event->type != SDL_USEREVENT || event->user.code != MAINUI_CAROUSEL_READY_CODE) {
+        ui->carousel_offscreen = false;
+    }
+    if (!ui->idle_tick &&
+        !(event->type == SDL_USEREVENT && event->user.code == MAINUI_CAROUSEL_READY_CODE)) {
         ui->active_at = SDL_GetTicks();
     }
     return true;

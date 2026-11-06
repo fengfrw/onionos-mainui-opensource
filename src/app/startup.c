@@ -182,10 +182,22 @@ int mainui_setup_session(MainUIApp *ui, int argc, char **argv)
     if (ui->config_dir) {
         mainui_config_load(&ui->config, ui->config_dir);
         mainui_game_menu_load(&ui->game_menu, ui->config_dir);
+        mainui_console_view_load(&ui->console_view, ui->config_dir);
     }
     else {
         mainui_config_parse(&ui->config, NULL, NULL, NULL, NULL);
         mainui_game_menu_defaults(&ui->game_menu);
+        mainui_console_view_parse(&ui->console_view, NULL);
+    }
+    /* Console thumbnails: a path as config.json paths are written, absolute
+     * (/mnt/SDCARD/...) or from the SD card's root, found on this host. */
+    char thumbs[MAINUI_PATH_MAX];
+    if (*ui->console_view.thumbs && ui->sd &&
+        mainui_catalog_path(thumbs, ui->sd, ui->sd, ui->console_view.thumbs)) {
+        strcpy(ui->console_view.thumbs, thumbs);
+    }
+    else {
+        ui->console_view.thumbs[0] = 0;
     }
     ui->list = calloc(1, sizeof *ui->list);
     ui->catalog = ui->sd ? calloc(1, sizeof *ui->catalog) : NULL;
@@ -748,8 +760,10 @@ int mainui_teardown(MainUIApp *ui)
             SDL_WaitThread(ui->preview.thread, NULL);
             ui->preview.thread = NULL;
         }
-        /* A list's video decoder still posts SDL events: stopped first. */
+        /* A list's video decoder and the carousel's picture worker still
+         * post SDL events: stopped first. */
         mainui_list_video_stop(&ui->list_video);
+        mainui_carousel_worker_close(&ui->menu_view.carousel_worker);
         mainui_audio_close();
         quit_sdl(ui);
         mainui_mark(MAINUI_MARK_EXIT);

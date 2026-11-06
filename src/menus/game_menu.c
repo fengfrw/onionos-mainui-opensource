@@ -31,16 +31,20 @@ static const GameMenuItem recents[] = {
 static const GameMenuItem search_results[] = {
     {"launch", CONTEXT_START, CONTEXT_START},
     {"favorite", CONTEXT_ADD_FAVORITE, CONTEXT_REMOVE_FAVORITE}};
+static const GameMenuItem consoles[] = {
+    {"refresh_all", CONTEXT_REFRESH, CONTEXT_REFRESH},
+    {"refresh", CONTEXT_REFRESH_SYSTEM, CONTEXT_REFRESH_SYSTEM}};
 
 static const struct {
     const char *key;
     const GameMenuItem *items;
     int count;
-} sections[MAINUI_GAME_MENU_SECTIONS] = {
+} sections[MAINUI_GAME_MENU_ALL] = {
     {"roms", roms, (int)(sizeof roms / sizeof *roms)},
     {"favorites", favorites, (int)(sizeof favorites / sizeof *favorites)},
     {"recents", recents, (int)(sizeof recents / sizeof *recents)},
-    {"search_results", search_results, (int)(sizeof search_results / sizeof *search_results)}};
+    {"search_results", search_results, (int)(sizeof search_results / sizeof *search_results)},
+    {"menu", consoles, (int)(sizeof consoles / sizeof *consoles)}};
 
 void mainui_game_menu_defaults(MainUIGameMenu *menu)
 {
@@ -59,34 +63,40 @@ bool mainui_game_menu_parse(MainUIGameMenu *menu, const char *text)
         return false;
     }
     for (int s = 0; s < MAINUI_GAME_MENU_SECTIONS; s++) {
-        const cJSON *list = cJSON_GetObjectItemCaseSensitive(root, sections[s].key);
-        if (!cJSON_IsArray(list)) {
-            continue;
-        }
-        menu->configured[s] = true;
-        const cJSON *id;
-        cJSON_ArrayForEach(id, list)
-        {
-            if (!cJSON_IsString(id)) {
-                continue;
-            }
-            for (int i = 0; i < sections[s].count; i++) {
-                if (strcmp(id->valuestring, sections[s].items[i].id)) {
-                    continue;
-                }
-                bool seen = false;
-                for (int k = 0; k < menu->count[s]; k++) {
-                    seen |= menu->order[s][k] == i;
-                }
-                if (!seen && menu->count[s] < MAINUI_GAME_MENU_ITEMS) {
-                    menu->order[s][menu->count[s]++] = i;
-                }
-                break;
-            }
-        }
+        mainui_game_menu_parse_list(menu, s,
+                                    cJSON_GetObjectItemCaseSensitive(root, sections[s].key));
     }
     cJSON_Delete(root);
     return true;
+}
+
+void mainui_game_menu_parse_list(MainUIGameMenu *menu, MainUIGameMenuSection s, const cJSON *list)
+{
+    if (!cJSON_IsArray(list) || (int)s < 0 || s >= MAINUI_GAME_MENU_ALL) {
+        return;
+    }
+    menu->configured[s] = true;
+    menu->count[s] = 0;
+    const cJSON *id;
+    cJSON_ArrayForEach(id, list)
+    {
+        if (!cJSON_IsString(id)) {
+            continue;
+        }
+        for (int i = 0; i < sections[s].count; i++) {
+            if (strcmp(id->valuestring, sections[s].items[i].id)) {
+                continue;
+            }
+            bool seen = false;
+            for (int k = 0; k < menu->count[s]; k++) {
+                seen |= menu->order[s][k] == i;
+            }
+            if (!seen && menu->count[s] < MAINUI_GAME_MENU_ITEMS) {
+                menu->order[s][menu->count[s]++] = i;
+            }
+            break;
+        }
+    }
 }
 
 void mainui_game_menu_load(MainUIGameMenu *menu, const char *directory)
@@ -104,7 +114,7 @@ void mainui_game_menu_load(MainUIGameMenu *menu, const char *directory)
 void mainui_game_menu_apply(MainUIContext *context, const MainUIGameMenu *menu,
                             MainUIGameMenuSection section)
 {
-    if (!menu || (int)section < 0 || section >= MAINUI_GAME_MENU_SECTIONS ||
+    if (!menu || (int)section < 0 || section >= MAINUI_GAME_MENU_ALL ||
         !menu->configured[section]) {
         return;
     }

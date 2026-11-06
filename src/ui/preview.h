@@ -12,6 +12,10 @@
  * image borrows a cache surface. Failed reads occupy a slot too. */
 typedef struct {
     SDL_Surface *image;
+    /* The console page's thumbnails folder (console-view.json), or NULL:
+     * borrowed, set before each request. */
+    const char *thumbs;
+    const char *theme_fallback; /* borrowed theme path, used only on UI thread */
 
     struct {
         char key[MAINUI_PATH_MAX];
@@ -34,6 +38,9 @@ typedef struct {
     atomic_bool done;
     SDL_Surface *decoded;
     char loading[MAINUI_PATH_MAX];
+    bool loading_console;
+    char loading_icon[MAINUI_PATH_MAX];
+    char loading_fallback[MAINUI_PATH_MAX];
     Uint32 changed_at;
     bool pending;
     const MainUICatalog *prefetch_catalog;

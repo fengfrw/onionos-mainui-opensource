@@ -373,6 +373,16 @@ static void wake_intervals(MainUIApp *ui)
     ui->catalog_job.started_at = (Uint32)-100;
     assert(mainui_wait_interval(ui, 100) == 300);
     reset(ui);
+    /* A deferred carousel frame wakes at the next 40ms deadline, even
+     * without another key press. Pending redraws are never skipped as idle. */
+    ui->last_screen_present_at = 1000;
+    ui->carousel_frame_pending = true;
+    assert(mainui_wait_interval(ui, 1010) == 30);
+    assert(mainui_wait_interval(ui, 1039) == 1);
+    assert(mainui_wait_interval(ui, 1040) == 1);
+    assert(!mainui_frame_current(ui, 1040));
+    ui->carousel_frame_pending = false;
+    reset(ui);
 }
 
 /* SDL_GetTicks() wraps after 49.7 days. Deadlines and intervals that cross
@@ -622,6 +632,154 @@ static void keymon_quiet_l1(MainUIApp *ui)
     key_event(ui, SDL_KEYUP, SDLK_PAGEUP, 0);
 }
 
+/* Before the carousel's first pictures are ready the frame before stays,
+ * but never over a menu, confirmation, keyboard or message, which take the
+ * buttons and so show at once. */
+static void carousel_hold_frame(MainUIApp *ui)
+{
+    reset(ui);
+    ui->home = false;
+    ui->catalog = calloc(1, sizeof *ui->catalog);
+    assert(ui->catalog);
+    ui->view = (MainUIViewport){.total = 3, .selected = 0};
+    ui->console_view.games = MAINUI_CONSOLE_CAROUSEL;
+    ui->systems_drawn = true;
+    assert(mainui_carousel_hold_frame(ui));
+    ui->context_open = true;
+    assert(!mainui_carousel_hold_frame(ui));
+    ui->context_open = false;
+    ui->confirmation = 0;
+    assert(!mainui_carousel_hold_frame(ui));
+    ui->confirmation = -1;
+    ui->name_input.open = true;
+    assert(!mainui_carousel_hold_frame(ui));
+    ui->name_input.open = false;
+    snprintf(ui->message_title, sizeof ui->message_title, "Message");
+    assert(!mainui_carousel_hold_frame(ui));
+    ui->message_title[0] = 0;
+    assert(mainui_carousel_hold_frame(ui));
+    ui->menu_view.carousel_revealed = true;
+    assert(!mainui_carousel_hold_frame(ui));
+    ui->menu_view.carousel_revealed = false;
+    ui->console_view.games = MAINUI_CONSOLE_LIST;
+    assert(!mainui_carousel_hold_frame(ui));
+    free(ui->catalog);
+    ui->catalog = NULL;
+}
+
+/* One queued tap survives release; held repeats do not leave a tail of
+ * moves after release. The queue is drained on a frame tick, not a key event. */
+static void carousel_repeat_pacing(MainUIApp *ui)
+{
+    reset(ui);
+    ui->home = false;
+    ui->catalog = calloc(1, sizeof *ui->catalog);
+    assert(ui->catalog);
+    ui->view = (MainUIViewport){.total = 8, .selected = 2};
+    ui->console_view.games = MAINUI_CONSOLE_CAROUSEL;
+    ui->console_view.slide = true;
+    ui->console_view.duration_ms = 300;
+    ui->console_view.repeat_ms = 200;
+    assert(tap(ui, SDLK_RIGHT));
+    assert(ui->view.selected == 3 && ui->carousel_direction_paced);
+    Uint32 accepted = ui->carousel_last_direction_at;
+    assert(tap(ui, SDLK_RIGHT));
+    assert(ui->view.selected == 3 && ui->carousel_pending_direction == 1 &&
+           ui->carousel_pending_tap);
+    assert(mainui_screen_carousel_due(ui, accepted + 200) > 0);
+    mainui_screen_carousel_step(ui, accepted + 200);
+    assert(ui->view.selected == 3);
+    mainui_screen_carousel_step(ui, accepted + 301);
+    assert(ui->view.selected == 4 && !ui->carousel_pending_direction);
+    /* A reversed tap replaces the pending direction, including after keyup. */
+    assert(tap(ui, SDLK_RIGHT));
+    assert(tap(ui, SDLK_LEFT));
+    assert(ui->carousel_pending_direction == -1 && ui->carousel_pending_tap);
+    mainui_screen_carousel_step(ui, ui->carousel_last_direction_at + 301);
+    assert(ui->view.selected == 3);
+    /* A held repeat can be queued but is cancelled when the key is released:
+     * the press itself moves at once, its repeat waits for the slide. */
+    ui->carousel_last_direction_at = SDL_GetTicks() - 1000;
+    assert(key_event(ui, SDL_KEYDOWN, SDLK_RIGHT, 0));
+    assert(ui->view.selected == 4 && !ui->carousel_pending_direction);
+    assert(key_event(ui, SDL_KEYDOWN, SDLK_RIGHT, 0));
+    assert(ui->carousel_pending_direction == 1 && !ui->carousel_pending_tap);
+    assert(key_event(ui, SDL_KEYUP, SDLK_RIGHT, 0));
+    assert(!ui->carousel_pending_direction && ui->view.selected == 4);
+    /* The first press of a hold made while a slide runs is a press, and
+     * waits for it as a tap does. */
+    assert(key_event(ui, SDL_KEYDOWN, SDLK_LEFT, 0));
+    assert(key_event(ui, SDL_KEYDOWN, SDLK_LEFT, 0));
+    assert(key_event(ui, SDL_KEYUP, SDLK_LEFT, 0));
+    assert(ui->carousel_pending_direction == -1 && ui->carousel_pending_tap);
+    mainui_screen_carousel_step(ui, ui->carousel_last_direction_at + 301);
+    assert(ui->view.selected == 3 && !ui->carousel_pending_direction);
+    /* A held repeat must not cancel an already queued deliberate tap. */
+    assert(tap(ui, SDLK_RIGHT));
+    assert(key_event(ui, SDL_KEYDOWN, SDLK_RIGHT, 0));
+    assert(key_event(ui, SDL_KEYDOWN, SDLK_RIGHT, 0));
+    assert(key_event(ui, SDL_KEYUP, SDLK_RIGHT, 0));
+    assert(ui->carousel_pending_direction == 1 && ui->carousel_pending_tap);
+    /* The real animation starts at its first rendered frame, not keydown. */
+    ui->menu_view.cached_start = MAINUI_MENU_VIEW_CAROUSEL;
+    ui->menu_view.slid_to = ui->view.selected;
+    ui->menu_view.sliding = true;
+    ui->menu_view.slide_start = ui->carousel_last_direction_at + 40;
+    assert(mainui_screen_carousel_due(ui, ui->carousel_last_direction_at + 301) > 0);
+    mainui_screen_carousel_step(ui, ui->carousel_last_direction_at + 301);
+    assert(ui->view.selected == 3);
+    mainui_screen_carousel_step(ui, ui->carousel_last_direction_at + 341);
+    assert(ui->view.selected == 4);
+    ui->menu_view.sliding = false;
+    ui->menu_view.cached_start = 0;
+    /* No slide: repeat_ms alone applies. */
+    ui->console_view.slide = false;
+    ui->console_view.repeat_ms = 100;
+    ui->carousel_last_direction_at = SDL_GetTicks() - 50;
+    assert(tap(ui, SDLK_RIGHT));
+    assert(ui->carousel_pending_direction == 1);
+    mainui_screen_carousel_step(ui, ui->carousel_last_direction_at + 101);
+    assert(ui->view.selected == 5);
+    /* A shoulder action cancels a pending tap. */
+    assert(tap(ui, SDLK_RIGHT));
+    assert(ui->carousel_pending_direction == 1);
+    assert(tap(ui, SDLK_TAB));
+    assert(!ui->carousel_pending_direction);
+    /* Leaving Carousel cancels pending input and resets the first-move latch. */
+    assert(tap(ui, SDLK_ESCAPE));
+    assert(ui->home && !ui->carousel_direction_paced);
+    ui->home = false;
+    ui->view.selected = 2;
+    assert(tap(ui, SDLK_RIGHT));
+    assert(ui->view.selected == 3);
+    /* Grid mode remains unpaced. */
+    ui->console_view.games = MAINUI_CONSOLE_GRID;
+    assert(tap(ui, SDLK_LEFT));
+    assert(tap(ui, SDLK_LEFT));
+    assert(ui->view.selected == 1);
+    free(ui->catalog);
+    reset(ui);
+}
+
+/* A shoulder jump is a snap, not a slide through now-invisible artwork.
+ * Ordinary Left/Right movement must keep its slide. */
+static void carousel_shoulder_snap(MainUIApp *ui)
+{
+    reset(ui);
+    ui->home = false;
+    ui->catalog = calloc(1, sizeof *ui->catalog);
+    assert(ui->catalog);
+    ui->view = (MainUIViewport){.total = 20, .selected = 5};
+    ui->console_view.games = MAINUI_CONSOLE_CAROUSEL;
+    assert(tap(ui, SDLK_TAB));
+    assert(ui->view.selected == 2 && ui->menu_view.carousel_snap);
+    ui->menu_view.carousel_snap = false; /* A draw consumes the one-shot flag. */
+    assert(tap(ui, SDLK_RIGHT));
+    assert(ui->view.selected == 3 && !ui->menu_view.carousel_snap);
+    free(ui->catalog);
+    reset(ui);
+}
+
 /* B and unbound X dismiss a fullscreen list preview without running the
  * list's normal Back action. Repeats are swallowed until that physical key
  * is released; Menu also dismisses before opening its context menu. */
@@ -683,6 +841,9 @@ int mainui_suite_screen_events(void)
     assert(ui);
     settings_windows(ui);
     selection_identity(ui);
+    carousel_hold_frame(ui);
+    carousel_repeat_pacing(ui);
+    carousel_shoulder_snap(ui);
     wake_intervals(ui);
     tick_wraparound(ui);
     idle_frame(ui);

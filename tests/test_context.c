@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
+#include "menus/console_view.h"
 #include "menus/context.h"
 #include "menus/favorite_context.h"
 #include "menus/game_menu.h"
@@ -63,6 +64,156 @@ static void actions_are(const MainUIContext *context, const MainUIContextAction 
         assert(context->entries[context->visible[i]].action == want[i]);
         assert(context->entries[i].enabled);
     }
+}
+
+/* console-view.json: "carousel" or "list" for games or expert; anything
+ * else, a missing key, a missing file or a file that is not an object, the
+ * grid. "thumbs", a folder of <emu folder>.png in lowercase. */
+static void console_views(void)
+{
+    MainUIConsoleView view;
+    assert(mainui_console_view_parse(&view, NULL) && view.games == MAINUI_CONSOLE_GRID &&
+           view.expert == MAINUI_CONSOLE_GRID && !*view.thumbs);
+    assert(mainui_console_view_parse(&view, "{// comment\n\"games\": \"carousel\",}") &&
+           view.games == MAINUI_CONSOLE_CAROUSEL);
+    assert(mainui_console_view_parse(&view, "{\"games\": \"carousel\"}") &&
+           view.games == MAINUI_CONSOLE_CAROUSEL && view.expert == MAINUI_CONSOLE_GRID);
+    assert(mainui_console_view_parse(&view, "{\"games\": \"list\", \"expert\": \"carousel\", "
+                                            "\"thumbs\": \"/mnt/SDCARD/Thumbs\"}") &&
+           view.games == MAINUI_CONSOLE_LIST && view.expert == MAINUI_CONSOLE_CAROUSEL &&
+           !strcmp(view.thumbs, "/mnt/SDCARD/Thumbs"));
+    /* Names, counts, folder icons and the list's covers shown unless false;
+     * "labels" in "carousel", "folder_icon" and "thumbs" in "list" only. */
+    assert(!view.hide_labels && !view.hide_count && !view.hide_folder_icon &&
+           !view.hide_list_thumbs && view.selection == MAINUI_CONSOLE_SELECTION_DEFAULT &&
+           !view.menu.configured[0]);
+    assert(mainui_console_view_parse(&view, "{\"count\": false, \"carousel\": {\"labels\": "
+                                            "false}, \"list\": {\"folder_icon\": false}}") &&
+           view.hide_labels && view.hide_count && view.hide_folder_icon && !view.hide_list_thumbs);
+    /* The list's "thumbs": false hides its covers and keeps the folder. */
+    assert(mainui_console_view_parse(&view, "{\"thumbs\": \"Thumbs\", \"list\": "
+                                            "{\"thumbs\": false}}") &&
+           view.hide_list_thumbs && !strcmp(view.thumbs, "Thumbs"));
+    assert(mainui_console_view_parse(&view, "{\"list\": {\"thumbs\": 0}}") &&
+           !view.hide_list_thumbs);
+    assert(
+        mainui_console_view_parse(&view, "{\"labels\": false, \"folder_icon\": false, "
+                                         "\"carousel\": {\"labels\": 0}, \"count\": \"false\"}") &&
+        !view.hide_labels && !view.hide_count && !view.hide_folder_icon && !view.hide_list_thumbs);
+    /* The selection: false or "" for none, a colour, or else the default. */
+    assert(mainui_console_view_parse(&view, "{\"carousel\": {\"selection\": false}}") &&
+           view.selection == MAINUI_CONSOLE_SELECTION_NONE);
+    assert(mainui_console_view_parse(&view, "{\"carousel\": {\"selection\": \"\"}}") &&
+           view.selection == MAINUI_CONSOLE_SELECTION_NONE);
+    assert(mainui_console_view_parse(&view, "{\"carousel\": {\"selection\": \"#1a2B3c\"}}") &&
+           view.selection == MAINUI_CONSOLE_SELECTION_COLOUR && view.selection_colour.r == 0x1a &&
+           view.selection_colour.g == 0x2b && view.selection_colour.b == 0x3c &&
+           view.selection_alpha == 255);
+    assert(mainui_console_view_parse(&view, "{\"carousel\": {\"selection\": \"#FFFFFF38\"}}") &&
+           view.selection == MAINUI_CONSOLE_SELECTION_COLOUR && view.selection_alpha == 0x38);
+    const char *defaults[] = {"true", "\"#FFF\"", "\"#GG0000\"", "\"FFFFFF\"", "\"#FFFFFF3\"", "1"};
+    for (size_t i = 0; i < sizeof defaults / sizeof *defaults; i++) {
+        char text[64];
+        snprintf(text, sizeof text, "{\"carousel\": {\"selection\": %s}}", defaults[i]);
+        assert(mainui_console_view_parse(&view, text) &&
+               view.selection == MAINUI_CONSOLE_SELECTION_DEFAULT);
+    }
+    /* The carousel's and grid's numbers and switches: defaults, ranges and
+     * anything else as missing. */
+    assert(mainui_console_view_parse(&view, NULL) && view.scale_unselected == 70 &&
+           view.opacity_unselected == 50 && view.gap == 40 && view.duration_ms == 180 &&
+           view.repeat_ms == 0 && !view.smooth_easing && view.selection_padding == 12 &&
+           !view.offset_y && view.slide && view.carousel_wrap && view.vsync && !view.grid_stock &&
+           !view.grid_no_wrap);
+    assert(mainui_console_view_parse(
+               &view,
+               "{\"carousel\": {\"scale_unselected\": 0.85, \"gap\": 32, \"animation\": "
+               "\"slide\", \"duration_ms\": 200, \"wrap\": false, \"selection_padding\": 4, "
+               "\"offset_y\": -20}, \"grid\": {\"navigation\": \"stock\", \"wrap\": false}}") &&
+           view.scale_unselected == 85 && view.gap == 32 && view.slide && view.duration_ms == 200 &&
+           !view.carousel_wrap && view.selection_padding == 4 && view.offset_y == -20 &&
+           view.grid_stock && view.grid_no_wrap);
+    assert(mainui_console_view_parse(
+               &view,
+               "{\"carousel\": {\"scale_unselected\": 0.2, \"gap\": 999, \"duration_ms\": 1, "
+               "\"selection_padding\": -5, \"offset_y\": 500, \"opacity_unselected\": 2}}") &&
+           view.scale_unselected == 60 && view.gap == 100 && view.duration_ms == 80 &&
+           !view.selection_padding && view.offset_y == 60 && view.opacity_unselected == 100);
+    assert(mainui_console_view_parse(&view, "{\"carousel\": {\"opacity_unselected\": 0, "
+                                            "\"duration_ms\": 2000}}") &&
+           !view.opacity_unselected && view.duration_ms == 500);
+    assert(mainui_console_view_parse(
+               &view, "{\"carousel\": {\"scale_unselected\": \"0.9\", \"animation\": \"Slide\", "
+                      "\"wrap\": 1}, \"grid\": {\"navigation\": \"Stock\", \"wrap\": 0}}") &&
+           view.scale_unselected == 70 && view.slide && view.carousel_wrap && !view.grid_stock &&
+           !view.grid_no_wrap);
+    assert(mainui_console_view_parse(&view, "{\"carousel\": {\"vsync\": true}}") && view.vsync);
+    assert(mainui_console_view_parse(&view, "{\"carousel\": {\"vsync\": false}}") && !view.vsync);
+    assert(mainui_console_view_parse(&view, "{\"carousel\": {\"vsync\": 1}}") && view.vsync);
+    assert(mainui_console_view_parse(&view, "{\"carousel\": {\"repeat_ms\": 150}}") &&
+           view.repeat_ms == 150);
+    assert(mainui_console_view_parse(&view, "{\"carousel\": {\"repeat_ms\": -20}}") &&
+           view.repeat_ms == 0);
+    assert(mainui_console_view_parse(&view, "{\"carousel\": {\"repeat_ms\": 600}}") &&
+           view.repeat_ms == 400);
+    assert(mainui_console_view_parse(&view, "{\"carousel\": {\"repeat_ms\": \"150\"}}") &&
+           view.repeat_ms == 0);
+    assert(mainui_console_view_parse(&view, "{\"carousel\": {\"animation\": \"slide\", "
+                                            "\"easing\": \"smooth\"}}") &&
+           view.slide && view.smooth_easing);
+    assert(mainui_console_view_parse(&view, "{\"carousel\": {\"easing\": \"Smooth\"}}") &&
+           !view.smooth_easing);
+    /* A slide unless "animation": "none". */
+    assert(mainui_console_view_parse(&view, "{\"carousel\": {\"animation\": \"none\"}}") &&
+           !view.slide);
+    assert(mainui_console_view_parse(&view, "{\"carousel\": {\"duration_ms\": 499}}") &&
+           view.duration_ms == 499);
+    /* "menu": the console page's rows, as game-menu.json's sections. */
+    const MainUIContextAction rows[] = {CONTEXT_REFRESH, CONTEXT_REFRESH_SYSTEM};
+    MainUIContext menu;
+    assert(mainui_console_view_parse(&view, "{\"menu\": [\"refresh\", \"bogus\", "
+                                            "\"refresh_all\", \"refresh\"]}"));
+    mainui_context_rows(&menu, rows, 2);
+    mainui_game_menu_apply(&menu, &view.menu, MAINUI_GAME_MENU_CONSOLES);
+    const MainUIContextAction swapped[] = {CONTEXT_REFRESH_SYSTEM, CONTEXT_REFRESH};
+    actions_are(&menu, swapped, 2);
+    mainui_context_rows(&menu, rows, 1); /* the Search console: no Refresh roms */
+    mainui_game_menu_apply(&menu, &view.menu, MAINUI_GAME_MENU_CONSOLES);
+    actions_are(&menu, rows, 1);
+    assert(mainui_console_view_parse(&view, "{\"menu\": []}"));
+    mainui_context_rows(&menu, rows, 2);
+    mainui_game_menu_apply(&menu, &view.menu, MAINUI_GAME_MENU_CONSOLES);
+    assert(!menu.visible_count);
+    assert(mainui_console_view_parse(&view, "{\"menu\": \"refresh\"}"));
+    mainui_context_rows(&menu, rows, 2);
+    mainui_game_menu_apply(&menu, &view.menu, MAINUI_GAME_MENU_CONSOLES);
+    actions_are(&menu, rows, 2);
+    /* game-menu.json has no console section. */
+    MainUIGameMenu games;
+    assert(mainui_game_menu_parse(&games, "{\"menu\": [], \"consoles\": []}"));
+    assert(!games.configured[MAINUI_GAME_MENU_CONSOLES]);
+    const char *grid[] = {"{}", "{\"games\": \"Carousel\"}", "{\"games\": true}",
+                          "{\"games\": \"lists\", \"expert\": 1, \"thumbs\": 3}"};
+    for (size_t i = 0; i < sizeof grid / sizeof *grid; i++) {
+        assert(mainui_console_view_parse(&view, grid[i]) && view.games == MAINUI_CONSOLE_GRID &&
+               view.expert == MAINUI_CONSOLE_GRID && !*view.thumbs);
+    }
+    const char *broken[] = {"{", "[\"carousel\"]", "\"carousel\"", ""};
+    for (size_t i = 0; i < sizeof broken / sizeof *broken; i++) {
+        assert(!mainui_console_view_parse(&view, broken[i]) && view.games == MAINUI_CONSOLE_GRID);
+    }
+    /* A console's thumbnail: its Emu folder's name in lowercase. */
+    char path[MAINUI_PATH_MAX];
+    MainUIEntry entry = {.config = "/sd/Emu/SFC/config.json"};
+    assert(mainui_console_thumb(path, "/sd/Thumbs", &entry) && !strcmp(path, "/sd/Thumbs/sfc.png"));
+    char fallback[MAINUI_PATH_MAX];
+    assert(mainui_console_thumb_default(fallback, path) &&
+           !strcmp(fallback, "/sd/Thumbs/_default.png"));
+    assert(!mainui_console_thumb_default(fallback, "") &&
+           !mainui_console_thumb_default(fallback, "file.png"));
+    assert(!mainui_console_thumb(path, "", &entry) && !mainui_console_thumb(path, NULL, &entry));
+    entry.config = NULL;
+    assert(!mainui_console_thumb(path, "/sd/Thumbs", &entry));
 }
 
 static void game_menus(void)
@@ -175,6 +326,7 @@ int mainui_suite_context(void)
 {
     favorite_popups();
     game_menus();
+    console_views();
     MainUIContext c;
     mainui_context_parse(&c, NULL, false, false, false);
     assert(c.visible_count == 1 && c.entries[0].action == CONTEXT_REFRESH && c.hotkey);

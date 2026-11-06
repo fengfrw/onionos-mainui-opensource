@@ -45,7 +45,7 @@ No reference database or real ROM content was used. Full stock fixture equivalen
 
 WAL caches are rejected by inspecting the database header before opening them with SQLite, rather than relying on a `SQLITE_OMIT_WAL` build. This keeps the rejection behaviour consistent across host and device SQLite builds.
 These caches fall back to filesystem browsing because read-only WAL connections may still need to create or update auxiliary shared-memory (`-shm`) files. See SQLite's official [read-only WAL documentation](https://www.sqlite.org/wal.html#read_only_databases).
-A WAL fixture verifies that no sidecar appears. Full WAL reading would require a separate no-write design; do not enable it silently in this development preview.
+The carousel's and list's game counts and Search's results read the caches the same way: WAL ones are not opened, and a count's query has the reader's budget of SQLite instructions, so a damaged cache cannot hold the screen. A WAL fixture verifies that no sidecar appears. Full WAL reading would require a separate no-write design; do not enable it silently in this development preview.
 
 ## Missing caches and explicit rebuild
 
