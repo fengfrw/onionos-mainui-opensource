@@ -132,6 +132,24 @@ removed, _ = run("ERX")
 FAVORITES.write_text("")
 assert removed == run("E")[0]
 FAVORITES.write_text(SAVED)
+# Also when another Favorite for the same ROM keeps the star lit: Game Info
+# closes on the list with the next row, Bravo, selected, so A launches the
+# game it shows.
+def favorite(label, rom):
+    return json.dumps(dict(label=label, rompath=f"/mnt/SDCARD/Roms/C/{rom}.nes",
+                           launch="/mnt/SDCARD/Emu/C/launch.sh", type=5)) + "\n"
+
+
+THREE = favorite("Alpha", "G00") + favorite("Bravo", "G01") + favorite("Charlie", "G00")
+FAVORITES.write_text(THREE)
+removed, _ = run("ERX")
+assert favorites() == ["Bravo", "Charlie"]
+listed, _ = run("E")
+assert removed == listed  # the list, Bravo selected
+FAVORITES.write_text(THREE)
+_, command = run("ERXA")
+assert command and b"G01.nes" in command, command
+FAVORITES.write_text(SAVED)
 
 # Favorites: X removes the selected Favorite, and the list closes up.
 shortcuts(x="fav")

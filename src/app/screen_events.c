@@ -555,7 +555,9 @@ bool mainui_screen_settings_page_key(MainUIApp *ui, SDLKey key)
 /* Add the game `record` to Favorites, or remove it from Favorites or
  * Recents (entry->action), as the context menu and the X and Y Favorite
  * shortcut do; the list shown and its markers follow. */
-static void saved_list_update(MainUIApp *ui, const MainUIContextEntry *entry, const cJSON *record)
+/* True when the Favorite or Recent was added or removed, also if the list
+ * shown could not be reloaded after. */
+static bool saved_list_update(MainUIApp *ui, const MainUIContextEntry *entry, const cJSON *record)
 {
     bool recent = entry->action == CONTEXT_REMOVE_RECENT;
     MainUISavedAction action = entry->action == CONTEXT_ADD_FAVORITE ? SAVED_ADD : SAVED_REMOVE;
@@ -565,6 +567,7 @@ static void saved_list_update(MainUIApp *ui, const MainUIContextEntry *entry, co
     if (ok && entry->action == CONTEXT_REMOVE_FAVORITE) {
         mainui_favorite_editor_close(&ui->favorite_editor);
     }
+    bool done = ok;
     if (ok) {
         mainui_markers_refresh(ui, true);
     }
@@ -582,6 +585,7 @@ static void saved_list_update(MainUIApp *ui, const MainUIContextEntry *entry, co
         snprintf(ui->message_title, sizeof ui->message_title, "%s", mainui_context_label(entry));
         snprintf(ui->message_body, sizeof ui->message_body, "Could not update the saved list.");
     }
+    return done;
 }
 
 bool mainui_screen_context_menu_key(MainUIApp *ui, SDLKey key, int *requested_section)
@@ -1246,7 +1250,8 @@ static bool app_selected(const MainUIApp *ui)
 /* The Favorite shortcut: the selected game, or app in Apps, is added to
  * Favorites, or removed when it is one, as the context menu's Add to
  * favorites and Remove Favorite do. */
-static void toggle_favorite(MainUIApp *ui)
+/* True when it removed the selected Favorite. */
+static bool toggle_favorite(MainUIApp *ui)
 {
     cJSON *record =
         ui->apps      ? mainui_catalog_record(ui->apps, ui->apps_view.selected)
@@ -1255,7 +1260,7 @@ static void toggle_favorite(MainUIApp *ui)
                       : mainui_catalog_record(ui->catalog,
                                               mainui_browser_index(ui->catalog, ui->view.selected));
     if (!record) {
-        return;
+        return false;
     }
     mainui_markers_refresh(ui, false);
     const cJSON *rom = cJSON_GetObjectItemCaseSensitive(record, "rompath");
@@ -1263,8 +1268,9 @@ static void toggle_favorite(MainUIApp *ui)
         .action = cJSON_IsString(rom) && mainui_library_contains(ui->favorites, rom->valuestring)
                       ? CONTEXT_REMOVE_FAVORITE
                       : CONTEXT_ADD_FAVORITE};
-    saved_list_update(ui, &entry, record);
+    bool done = saved_list_update(ui, &entry, record);
     cJSON_Delete(record);
+    return done && entry.action == CONTEXT_REMOVE_FAVORITE;
 }
 
 /* What a launch from the screen in front would be: the screen, its list and
@@ -1462,12 +1468,14 @@ static void button_shortcut(MainUIApp *ui, char button)
         return;
     }
     if (shortcut == MAINUI_SHORTCUT_FAVORITE) {
-        toggle_favorite(ui);
+        bool removed = toggle_favorite(ui);
         /* Game Info's star follows (mainui_markers_refresh()). Removed from
-         * the Favorites list it is shown from, the game's row is gone:
-         * Game Info closes on the list. */
-        if (ui->details.open && ui->library && !ui->library->recent && !ui->search.results &&
-            !ui->details.favorite) {
+         * the Favorites list it is shown from, the game's row is gone, even
+         * when another Favorite for its ROM keeps the star lit: Game Info
+         * closes on the list, the next row selected, so A never launches a
+         * game other than the one shown. */
+        if (removed && ui->details.open && ui->library && !ui->library->recent &&
+            !ui->search.results) {
             mainui_details_close(&ui->details);
             ui->cached_start = -1;
         }
