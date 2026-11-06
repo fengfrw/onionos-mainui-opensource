@@ -1568,6 +1568,15 @@ bool mainui_catalog_enter(MainUICatalog *catalog, int index)
         fprintf(stderr, "[scan] %s: listed by scanning its folder (cache unreadable)\n",
                 next->path);
     }
+    /* Search's results are its database, which only Search writes: without
+     * one, scanning its data folder would list no results or unrelated
+     * folders as if they were. */
+    if (!catalog->depth && !forced_scan && search_database(catalog, next->path) &&
+        !path_exists(next->cache_file)) {
+        close_page(next);
+        strcpy(catalog->error, "No Search results to show. Run Search again.");
+        return false;
+    }
     if (!scan(next, catalog->sd, false, catalog->case_sensitive, catalog->cancel)) {
         close_page(next);
         snprintf(catalog->error, sizeof catalog->error,
