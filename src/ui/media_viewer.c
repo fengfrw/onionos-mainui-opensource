@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 #include "ui/media_viewer.h"
+#include "platform/audio.h"
 #include "ui/artwork.h"
 #include "ui/drawing.h"
 #include <stdio.h>
@@ -70,6 +71,11 @@ int mainui_media_find(const char *rom_root, const char *rom, MainUIMediaItem *it
 
 static void release(MainUIMediaViewer *viewer)
 {
+    /* The mixer must stop asking the video for sound before it goes. */
+    if (viewer->hooked) {
+        mainui_audio_unhook();
+        viewer->hooked = false;
+    }
     mainui_video_close(viewer->video);
     viewer->video = NULL;
     if (viewer->image) {
@@ -127,10 +133,18 @@ static void show(MainUIMediaViewer *viewer, SDL_Surface *screen)
     const MainUIMediaItem *item = &viewer->items[viewer->index];
     viewer->shown_at = SDL_GetTicks();
     if (item->kind == MAINUI_MEDIA_VIDEO) {
+        /* With sound when the theme's mixer can take it, in place of the
+         * theme's music, which goes on when the video is left. */
+        int rate = mainui_audio_rate();
         viewer->video =
             mainui_video_open(item->path, *viewer->library_dir ? viewer->library_dir : NULL, screen,
-                              screen->w, screen->h);
+                              screen->w, screen->h, rate);
         viewer->image_failed = !viewer->video;
+        viewer->hooked =
+            viewer->video && rate && mainui_audio_hook(mainui_video_sound, viewer->video);
+        if (viewer->sleeping) {
+            mainui_video_hold(viewer->video, true, SDL_GetTicks());
+        }
     }
     else {
         viewer->image = fitted(item->path, screen);
@@ -181,6 +195,44 @@ void mainui_media_key(MainUIMediaViewer *viewer, SDLKey key, SDL_Surface *screen
         viewer->index++;
         show(viewer, screen);
     }
+    /* A video: A pauses and goes on, L and R jump 5 s back and forward. */
+    else if (key == SDLK_RETURN && viewer->video) {
+        mainui_video_pause(viewer->video, !mainui_video_paused(viewer->video), SDL_GetTicks());
+    }
+    else if ((key == SDLK_PAGEUP || key == SDLK_PAGEDOWN) && viewer->video) {
+        mainui_video_seek(viewer->video,
+                          key == SDLK_PAGEUP ? -MAINUI_MEDIA_SEEK_MS : MAINUI_MEDIA_SEEK_MS);
+    }
+}
+
+/* Light text on a black box, at x from the left or, negative, the right. */
+static void badge(SDL_Surface *screen, TTF_Font *font, const char *text, int x)
+{
+    int width = 0, height = font ? TTF_FontHeight(font) : 0;
+    if (!font || TTF_SizeUTF8(font, text, &width, NULL) < 0) {
+        return;
+    }
+    SDL_Color white = {255, 255, 255, 0};
+    SDL_Rect back = {(Sint16)(x >= 0 ? x : screen->w + x - width - 12),
+                     (Sint16)(screen->h - height - 14), (Uint16)(width + 12), (Uint16)(height + 6)};
+    SDL_FillRect(screen, &back, SDL_MapRGB(screen->format, 0, 0, 0));
+    mainui_label(screen, font, white, text, back.x + 6, back.y + 3);
+}
+
+/* The pause sign, two white bars on a black box as tall as a badge, at the
+ * bottom left: drawn, so it needs no glyph from the theme's font. */
+static void pause_sign(SDL_Surface *screen, TTF_Font *font)
+{
+    int height = (font ? TTF_FontHeight(font) : 18) + 6;
+    int bar = height / 5 > 3 ? height / 5 : 3, tall = height - 10;
+    SDL_Rect back = {8, (Sint16)(screen->h - height - 8), (Uint16)(bar * 3 + 16), (Uint16)height};
+    SDL_FillRect(screen, &back, SDL_MapRGB(screen->format, 0, 0, 0));
+    Uint32 white = SDL_MapRGB(screen->format, 255, 255, 255);
+    for (int i = 0; i < 2; i++) {
+        SDL_Rect rect = {(Sint16)(back.x + 8 + i * bar * 2), (Sint16)(back.y + 5), (Uint16)bar,
+                         (Uint16)tall};
+        SDL_FillRect(screen, &rect, white);
+    }
 }
 
 static void centered(SDL_Surface *screen, TTF_Font *font, const char *text, int y)
@@ -221,16 +273,13 @@ void mainui_media_draw(MainUIMediaViewer *viewer, MainUITheme *theme, SDL_Surfac
     else if (shown) {
         mainui_blit(screen, shown, (screen->w - shown->w) / 2, (screen->h - shown->h) / 2);
     }
-    if (viewer->count > 1 && theme->hint_font) {
+    if (viewer->count > 1) {
         char counter[32];
         snprintf(counter, sizeof counter, "%d/%d", viewer->index + 1, viewer->count);
-        int width = 0, height = TTF_FontHeight(theme->hint_font);
-        TTF_SizeUTF8(theme->hint_font, counter, &width, NULL);
-        SDL_Color white = {255, 255, 255, 0};
-        SDL_Rect back = {(Sint16)(screen->w - width - 20), (Sint16)(screen->h - height - 14),
-                         (Uint16)(width + 12), (Uint16)(height + 6)};
-        SDL_FillRect(screen, &back, SDL_MapRGB(screen->format, 0, 0, 0));
-        mainui_label(screen, theme->hint_font, white, counter, back.x + 6, back.y + 3);
+        badge(screen, theme->hint_font, counter, -8);
+    }
+    if (viewer->video && !*error && mainui_video_paused(viewer->video)) {
+        pause_sign(screen, theme->hint_font);
     }
 }
 
@@ -239,9 +288,19 @@ int mainui_media_due(const MainUIMediaViewer *viewer, Uint32 now)
     return viewer->open && viewer->video ? mainui_video_due(viewer->video, now) : -1;
 }
 
+void mainui_media_sleep(MainUIMediaViewer *viewer, bool sleeping, Uint32 now)
+{
+    viewer->sleeping = sleeping;
+    if (viewer->video) {
+        mainui_video_hold(viewer->video, sleeping, now);
+    }
+}
+
 void mainui_media_close(MainUIMediaViewer *viewer)
 {
+    bool sleeping = viewer->sleeping;
     release(viewer);
     free(viewer->items);
     *viewer = (MainUIMediaViewer){0};
+    viewer->sleeping = sleeping;
 }

@@ -184,6 +184,8 @@ bool mainui_poll_jobs(MainUIApp *ui)
             if (resumed || previous_sleep != ui->device_status.sleeping) {
                 ui->active_at = now;
                 mainui_audio_pause(!resumed && ui->device_status.sleeping == 1);
+                mainui_media_sleep(&ui->details.media, !resumed && ui->device_status.sleeping == 1,
+                                   now);
                 memset(ui->held, 0, sizeof ui->held);
                 /* As on focus loss: a release after sleep is no press. */
                 ui->x_armed = ui->y_armed = ui->select_armed = ui->start_armed = false;

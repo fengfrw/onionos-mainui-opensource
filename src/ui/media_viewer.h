@@ -28,6 +28,9 @@ enum {
     MAINUI_MEDIA_VIDEO
 };
 
+/* L and R jump this far in a video. */
+#define MAINUI_MEDIA_SEEK_MS 5000
+
 /* At most 20 screenshots: <name>.png and <name>-1.png on. */
 #define MAINUI_MEDIA_SCREENSHOTS 20
 #define MAINUI_MEDIA_MAX (MAINUI_MEDIA_SCREENSHOTS + 4)
@@ -43,6 +46,8 @@ typedef struct {
     MainUIMediaItem *items; /* owned while open */
     SDL_Surface *image;     /* the shown image, fitted to the screen */
     MainUIVideo *video;     /* the shown video while it plays */
+    bool hooked;            /* its sound replaces the theme's music */
+    bool sleeping;          /* the device sleeps: a video stands still */
     Uint32 shown_at;
     char library_dir[4096]; /* Onion's FFmpeg: <sd>/.tmp_update/lib/parasyte */
 } MainUIMediaViewer;
@@ -56,14 +61,20 @@ int mainui_media_find(const char *rom_root, const char *rom, MainUIMediaItem *it
 bool mainui_media_open(MainUIMediaViewer *viewer, const char *rom_root, const char *rom,
                        const char *sd, SDL_Surface *screen);
 /* Right shows the next item, up to the last; Left the previous one, and
- * from the first it closes, as B does. Every key is taken
- * while the gallery is open. */
+ * from the first it closes, as B does. On a video A
+ * pauses and goes on, and L and R jump about 5 s back and forward, to a
+ * keyframe. Every key is
+ * taken while the gallery is open. */
 void mainui_media_key(MainUIMediaViewer *viewer, SDLKey key, SDL_Surface *screen);
 /* snapshot: wait for a video's first frame, to draw a given state. */
 void mainui_media_draw(MainUIMediaViewer *viewer, MainUITheme *theme, SDL_Surface *screen,
                        bool snapshot);
 /* Milliseconds until the playing video's next frame is due, or -1. */
 int mainui_media_due(const MainUIMediaViewer *viewer, Uint32 now);
+/* While the device sleeps a video reads and decodes nothing and stands
+ * still; on waking it goes on from there, or stays paused. Kept across
+ * close, so a video shown meanwhile starts held. */
+void mainui_media_sleep(MainUIMediaViewer *viewer, bool sleeping, Uint32 now);
 /* Stop any video and free everything. Safe when closed. */
 void mainui_media_close(MainUIMediaViewer *viewer);
 #endif

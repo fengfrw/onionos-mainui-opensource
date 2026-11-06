@@ -88,7 +88,10 @@ The file is read when MainUI starts and never written. Confirmations still ask a
 
 ## Game Info's media gallery
 
-Right in Game Info opens a fullscreen gallery of the game's media, when it has any; otherwise Right does nothing there. Right shows the next item, and on the last one does nothing, and Left the previous one; Left on the first item goes back to Game Info, as B does from any item. Other buttons do nothing in the gallery, and the X and Y shortcuts do not act there.
+Right in Game Info opens a fullscreen gallery of the game's media, when it has any; otherwise Right does nothing there. Right shows the next item, and on the last one does nothing, and Left the previous one; Left on the first item goes back to Game Info, as B does from any item.
+On a video, A pauses it (a pause sign shows at the bottom left) and plays it on, and L and R jump about 5 seconds back and forward; paused, it stays paused there.
+A jump lands on a keyframe, a picture the video can start from, and shows it at once: forward the first one at least 5 seconds on, back the last one at least 5 seconds back, so it can go further than 5 seconds; past the last one the video starts again.
+Videos with a keyframe every second or two, such as `ffmpeg -g 30` makes at 30 frames per second, jump closest to 5 seconds. While the device sleeps a video stands still, and on waking it goes on from there. Other buttons do nothing in the gallery, and the X and Y shortcuts do not act there.
 
 The media is in a `media` folder in the console's ROM folder, beside `Imgs`, under the ROM file's name without its extension (not the game's title). Every folder is optional. In this order:
 
@@ -114,8 +117,11 @@ On the SD card's FAT the folder names match in any case; elsewhere they must be 
 Only these files are looked for, when the gallery opens; nothing is scanned. A `media` folder, in any case and at any depth, is never listed as a ROM folder, nor anything in it, as for `Imgs` (see [CATALOG_CACHE.md](CATALOG_CACHE.md#differences-from-stock)).
 
 Images are scaled to fit the screen, keeping their shape, on black. A counter such as `2/5` shows at the bottom right when there is more than one item.
-Videos play without sound as soon as they are shown, and repeat. They use the FFmpeg libraries Onion already has for its video player, in `.tmp_update/lib/parasyte`, loaded from there only while a video plays, so MainUI starts without them.
-Without them, or for a file they cannot play, the gallery says so instead. H.264 MP4 files of about 320x240 at 15 to 30 frames per second suit the Miyoo Mini; videos over 1280x720 are not played.
+Videos play as soon as they are shown, and repeat. They use the FFmpeg libraries Onion already has for its video player, in `.tmp_update/lib/parasyte`, loaded from there only while a video plays, so MainUI starts without them.
+Without them, or for a file they cannot play, the gallery says so instead.
+A video's sound plays in place of the theme's music, which goes on when the video is left, at the device's volume rather than the menu music's. It plays without gaps, and the picture follows it, within about 50 ms.
+Sound and pictures are read ahead of each other, so files that store their sound in blocks some way from its pictures (as MP4Box does) play smoothly too.
+A video without sound, or whose sound cannot be decoded, plays silently; so do videos when the theme's music cannot play (no SDL_mixer). H.264 MP4 files of about 320x240 at 15 to 30 frames per second suit the Miyoo Mini; videos over 1280x720 are not played.
 
 ## When a list changes
 

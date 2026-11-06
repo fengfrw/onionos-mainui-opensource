@@ -18,10 +18,14 @@ from env import BUILD, ONION_THEME, require_onion_theme  # noqa: E402
 require_onion_theme()
 ROOT = Path(__file__).resolve().parents[2]
 OUT = Path(tempfile.mkdtemp(prefix="media-gallery-", dir=BUILD))
-LIBS = {"full": BUILD / "ffstub.so", "noscale": BUILD / "ffstub-noscale.so"}
-for name, stub in LIBS.items():
+FFMPEG = ("libavutil.so.54", "libswscale.so.3", "libavcodec.so.56", "libavformat.so.56")
+# Onion's FFmpeg; one without sws_scale; one without libswresample (sound).
+LIBS = {"full": (BUILD / "ffstub.so", FFMPEG + ("libswresample.so.1",)),
+        "noscale": (BUILD / "ffstub-noscale.so", FFMPEG),
+        "noswr": (BUILD / "ffstub.so", FFMPEG)}
+for name, (stub, sonames) in LIBS.items():
     (OUT / name).mkdir()
-    for soname in ("libavutil.so.54", "libswscale.so.3", "libavcodec.so.56", "libavformat.so.56"):
+    for soname in sonames:
         (OUT / name / soname).symlink_to(stub.resolve())
 
 
@@ -41,22 +45,35 @@ for name, spec in {"ok": "320 240 6 20", "wide": "640 160 3 20", "tall": "120 24
                    "nopts": "320 240 6 20 nopts", "noseek": "320 240 3 20 noseek",
                    "slow": "320 240 1000 30 slow", "empty": "320 240 0 20",
                    "nocodec": "320 240 5 20 nocodec", "huge": "4000 3000 5 20",
+                   "long": "320 240 200 20", "sound": "320 240 200 20 audio48000",
+                   "sound44": "320 240 200 20 audio44100",
+                   "late": "320 240 200 20 audio48000 lag500",
+                   "nosoundcodec": "320 240 200 20 audio48000 nosoundcodec",
+                   "first": "320 240 200 20 audio48000 audiofirst",
                    "hugenocodec": "4000 3000 5 20 nocodec", "liar": "4000 3000 5 20 lie",
+                   "odd": "320 240 200 20 audio500",
                    "nodims": "320 240 5 20 nodims", "extra": "320 240 5 20 extra",
                    "grow": "320 240 200 20 grow10",
-                   "cover": "320 240 6 20 cover", "waitopen": "320 240 6 20 waitopen",
-                   "waitprobe": "320 240 6 20 waitprobe",
+                   "cover": "320 240 6 20 cover", "gop": "320 240 200 20 gop50",
+                   "soundgop": "320 240 200 20 audio48000 gop50",
+                   "big": "320 240 200 20 audio48000 packet300000",
+                   "waitopen": "320 240 6 20 waitopen", "waitprobe": "320 240 6 20 waitprobe",
                    "waitread": "320 240 6 20 waitread"}.items():
     (VIDEOS / f"{name}.mp4").write_text(f"STUB {spec}\n")
 (VIDEOS / "text.mp4").write_text("not a video\n")
 # Found in the folder given, as in Onion's parasyte folder, or by name.
+# Pause and seek; sound in step, at any rate, or none when it cannot play.
 (OUT / "none").mkdir()
 for mode, folder, path in (("play", "full", None), ("errors", "full", None),
                            ("errors", "-", "full"), ("missing", "noscale", None),
                            ("missing", "none", None), ("missing", "-", None),
-                           ("cancel", "full", None)):
+                           ("controls", "full", None), ("sound", "full", None),
+                           ("cancel", "full", None),
+                           ("silent nosoundcodec.mp4", "full", None),
+                           ("silent odd.mp4", "full", None),
+                           ("silent sound.mp4", "noswr", None)):
     libraries = str(OUT / folder) if folder != "-" else "-"
-    result = subprocess.run([str(BUILD / "fixture-video"), str(VIDEOS), libraries, mode],
+    result = subprocess.run([str(BUILD / "fixture-video"), str(VIDEOS), libraries] + mode.split(),
                             cwd=ROOT, env=environment(path), timeout=60, capture_output=True,
                             text=True)
     assert result.returncode == 0, (mode, folder, path, result.stdout, result.stderr)
@@ -88,7 +105,8 @@ for folder, suffix, colour in MEDIA:
     target.parent.mkdir(parents=True, exist_ok=True)
     Image.new("RGB", (300, 400) if folder in TALL else (320, 240), colour).save(target)
 (ROMS / "media/videos").mkdir()
-(ROMS / "media/videos" / (GAME + ".mp4")).write_text("STUB 320 240 6 20\n")
+# 10 s at 20 frames a second, with sound (silent in snapshots).
+(ROMS / "media/videos" / (GAME + ".mp4")).write_text("STUB 320 240 200 20 audio48000\n")
 COVER = (120, 60, 160)
 (ROMS / "Imgs").mkdir()
 Image.new("RGB", (200, 280), COVER).save(ROMS / "Imgs" / (GAME + ".png"))
@@ -151,7 +169,41 @@ video, log = shot(VIDEO)
 assert centre(video) == FRAME0 and video.getpixel((2, 2)) == FRAME0, centre(video)
 # The counter shows over it, bottom right.
 assert any(min(video.getpixel((x, y))) > 200 for x in range(560, 640) for y in range(430, 480))
-assert centre(shot(VIDEO + "R")[0]) == FRAME0  # the last: Right stays
+# On a video A pauses, with a pause sign at the bottom left, and goes on; R and
+# L (2 and 1) jump 5 s, 100 frames, forward and back, also while paused,
+# from the frame shown: the video plays on between the keys, a frame or two.
+
+
+def frame(image):
+    """The stub frame shown in the middle."""
+    r, g, b = centre(image)
+    assert b == 100 and r + g == 255, (r, g, b)
+    return r
+
+
+def label(image):
+    """The pause sign: two white bars side by side, black between them."""
+    rows = [[min(image.getpixel((x, y))) > 200 for x in range(0, 60)] for y in range(430, 480)]
+    for row in rows:
+        runs = [x for x in range(1, 60) if row[x] and not row[x - 1]]
+        if len(runs) == 2 and sum(row) <= 24:
+            return True
+    return False
+
+
+paused, _ = shot(VIDEO + "A")
+assert frame(paused) <= 2 and label(paused) and not label(video)
+resumed, _ = shot(VIDEO + "AA")
+assert frame(resumed) <= 2 and not label(resumed)
+assert frame(shot(VIDEO + "R")[0]) <= 4  # the last: Right leaves it playing
+assert 100 <= frame(shot(VIDEO + "2")[0]) <= 104
+assert 0 <= frame(shot(VIDEO + "21")[0]) <= 6
+assert frame(shot(VIDEO + "1")[0]) <= 2  # not before the start
+assert frame(shot(VIDEO + "22")[0]) <= 4  # past the end: from the start again
+later, _ = shot(VIDEO + "A2")
+assert 100 <= frame(later) <= 102 and label(later)  # and still paused
+# On an image A, L and R do nothing.
+assert shot("DRRA12")[0] == shot("DRR")[0]
 # Left goes back an item, and from the first one back to Game Info.
 assert centre(shot("DRRRL")[0]) == COLOURS["box2dfront"]
 assert centre(shot(VIDEO + "L")[0]) == COLOURS["screenshot-2"]

@@ -9,8 +9,10 @@
 
 void mainui_details_close(MainUIDetails *details)
 {
+    bool sleeping = details->media.sleeping;
     mainui_media_close(&details->media);
     *details = (MainUIDetails){0};
+    details->media.sleeping = sleeping;
 }
 
 void mainui_details_media(MainUIDetails *details, const char *sd, SDL_Surface *screen)

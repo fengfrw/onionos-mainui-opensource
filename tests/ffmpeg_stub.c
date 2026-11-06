@@ -1,26 +1,39 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * A stand-in for the FFmpeg 2.4 libraries Onion ships, for host tests of the
- * media gallery's video playback. The tests link it under the four sonames.
+ * media gallery's video playback. The tests link it under FFmpeg's sonames.
  * A "video" is a text file:
  *
- *   STUB <width> <height> <frames> <fps> [nopts] [slow] [noseek] [nocodec]
- *        [lie] [nodims] [cover] [extra] [waitopen] [waitprobe] [waitread]
+ *   STUB <width> <height> <frames> <fps> [audio<rate>] [lag<ms>] [nopts]
+ *        [slow] [noseek] [nocodec] [nosoundcodec] [audiofirst] [lie]
+ *        [nodims] [cover] [extra] [gop<frames>] [packet<bytes>]
+ *        [waitopen] [waitprobe] [waitread]
  *
  * Frame i decodes one frame late, as H.264 decoders hold frames, and
- * converts to a solid colour from i (stub_colour()). The codec context tells
- * the size before decoding, or 320x240 with lie, so only the decoded frames
- * show it, or nothing with nodims. cover adds cover art (an attached
- * picture, its size unknown), extra a second video stream of 4000x3000.
- * Probing reports, as an error, decoding any video stream not stated to be
- * within 1280x720, cover art included,
+ * converts to the colour (i, 255 - i, 100) (i below 256). With audio<rate>
+ * a sound stream of 16-bit stereo at that rate, in chunks of 1024 samples,
+ * is interleaved by time, each chunk lag ms after the pictures of its time
+ * (as some muxers store sound in blocks); every sample of chunk j is j + 1, and resampling
+ * keeps the values. A seek lands on the frame at or before the time asked
+ * for. The sound is stream 1, or stream 0 before the pictures with
+ * audiofirst. The codec context tells the size before decoding, or 320x240
+ * with lie, so only the decoded frames show it, or nothing with nodims.
+ * cover adds cover art (an attached picture, its size unknown), extra a
+ * second video stream of 4000x3000. Probing reports, as an error, decoding
+ * any video stream not stated to be within 1280x720, cover art included,
  * and decoding takes each picture's buffer through the codec context's
  * get_buffer2 at the size the stream really has, reporting as an error a
  * buffer taken for a picture over 1280x720 (rounded up to 16-pixel blocks).
- * grow<n> makes pictures from the nth on 4000x3000. waitopen, waitprobe and waitread hold
- * the open, the probe or the first read for 3 s unless the interrupt
- * callback stops them. Anything else fails to open. Built with
- * -DSTUB_WITHOUT_SCALE it lacks sws_scale. Every allocation is counted, and
- * the count left at unload is printed; errors are printed with "[ffstub]". */
+ * grow<n> makes pictures from the nth on 4000x3000.
+ * gop<n> makes seeks land on a keyframe, every n frames: the one at or
+ * before the time asked for with AVSEEK_FLAG_BACKWARD, else the one at or
+ * after it, and fail when there is none;
+ * packet<bytes> makes each picture's packet that large. Pictures must be
+ * decoded in the order they were read until the decoder is flushed, or an
+ * error is reported. waitopen, waitprobe and waitread hold the open, the
+ * probe or the first read for 3 s unless the interrupt callback stops them.
+ * Anything else fails to open. Built with -DSTUB_WITHOUT_SCALE it lacks
+ * sws_scale. Every allocation is counted, and the count left at unload is
+ * printed; errors are printed with "[ffstub]". */
 #define _POSIX_C_SOURCE 200809L
 #include "platform/ffmpeg_abi.h"
 #include <stdbool.h>
@@ -28,6 +41,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+
+enum {
+    CHUNK = 1024
+};
 
 static int live;
 
@@ -54,25 +71,29 @@ __attribute__((destructor)) static void report(void)
 typedef struct {
     MainUIAVFrame frame;
     int64_t best;
+    int rate, channels;
     uint8_t luma[16];
+    int16_t samples[CHUNK * 2];
+    uint8_t *planes[1];
 } StubFrame;
 
 typedef struct {
     MainUIAVCodecContext context; /* first: the stream's codec points here */
-    int width, height, frames, fps, pending, grow;
-    int nopts, slow, noseek, nocodec, opened;
+    int width, height, frames, fps, rate, lag, pending, expect, gop, packet, grow;
+    int nopts, slow, noseek, nocodec, nosoundcodec, opened, sound, audiofirst;
 } StubCodec;
 
 typedef struct {
     MainUIAVFormatContext context;
-    MainUIAVStream stream, third;
-    MainUIAVStream *streams[2];
-    StubCodec codec;
+    MainUIAVStream stream, sound_stream, third;
+    MainUIAVStream *streams[3];
+    StubCodec codec, sound_codec;
     MainUIAVCodecContext third_codec; /* cover art or a second video */
     int third_width, third_height;    /* as decoded */
-    int next;
+    int next, next_sound, chunks;
     bool wait_probe, wait_read;
     uint8_t packet[16];
+    uint8_t *big; /* packet<bytes> */
 } StubInput;
 
 /* Hold for up to 3 s, unless the interrupt callback stops it first. */
@@ -120,7 +141,11 @@ typedef struct {
     int format, width, height;
 } StubScaler;
 
-static const int decoder;
+typedef struct {
+    int in_rate, out_rate;
+} StubResampler;
+
+static const int decoder, sound_decoder;
 
 void av_register_all(void) {}
 
@@ -140,7 +165,7 @@ int avformat_open_input(MainUIAVFormatContext **out, const char *path, void *for
         fclose(file);
     }
     text[n] = 0;
-    StubCodec codec = {.pending = -1};
+    StubCodec codec = {.pending = -1, .expect = -1};
     if (sscanf(text, "STUB %d %d %d %d", &codec.width, &codec.height, &codec.frames, &codec.fps) !=
             4 ||
         codec.fps <= 0 || (strstr(text, " waitopen") && *out && interrupted_wait(*out))) {
@@ -148,10 +173,20 @@ int avformat_open_input(MainUIAVFormatContext **out, const char *path, void *for
         *out = NULL;
         return strstr(text, " waitopen") ? STUB_AVERROR_EXIT : -1;
     }
+    const char *audio = strstr(text, " audio");
+    codec.rate = audio ? atoi(audio + 6) : 0;
+    const char *lag = strstr(text, " lag");
+    codec.lag = lag ? atoi(lag + 4) : 0;
     codec.nopts = strstr(text, " nopts") != NULL;
     codec.slow = strstr(text, " slow") != NULL;
     codec.noseek = strstr(text, " noseek") != NULL;
     codec.nocodec = strstr(text, " nocodec") != NULL;
+    codec.nosoundcodec = strstr(text, " nosoundcodec") != NULL;
+    codec.audiofirst = codec.rate > 0 && strstr(text, " audiofirst") != NULL;
+    const char *gop = strstr(text, " gop");
+    codec.gop = gop ? atoi(gop + 4) : 0;
+    const char *packet = strstr(text, " packet");
+    codec.packet = packet ? atoi(packet + 7) : 0;
     const char *grow = strstr(text, " grow");
     codec.grow = grow ? atoi(grow + 5) : 0;
     bool lie = strstr(text, " lie") != NULL, nodims = strstr(text, " nodims") != NULL;
@@ -167,11 +202,35 @@ int avformat_open_input(MainUIAVFormatContext **out, const char *path, void *for
     *input = (StubInput){.context.interrupt_callback = check};
     input->wait_probe = strstr(text, " waitprobe") != NULL;
     input->wait_read = strstr(text, " waitread") != NULL;
+    if (codec.packet > (int)sizeof input->packet) {
+        input->big = allocate((size_t)codec.packet);
+        if (!input->big) {
+            release(input);
+            *out = NULL;
+            return -1;
+        }
+    }
     input->codec = codec;
     input->stream.codec = &input->codec.context;
     input->stream.time_base = (MainUIAVRational){1, 90000};
     input->streams[0] = &input->stream;
     input->context.nb_streams = 1;
+    if (codec.rate > 0) {
+        input->sound_codec = codec;
+        input->sound_codec.sound = 1;
+        input->sound_codec.context.codec_type = MAINUI_AVMEDIA_TYPE_AUDIO;
+        input->sound_codec.context.codec_id = 86018; /* AAC */
+        input->sound_codec.context.width = input->sound_codec.context.height = 0;
+        input->stream.index = codec.audiofirst;
+        input->sound_stream.index = !codec.audiofirst;
+        input->sound_stream.codec = &input->sound_codec.context;
+        input->sound_stream.time_base = (MainUIAVRational){1, codec.rate};
+        input->streams[input->sound_stream.index] = &input->sound_stream;
+        input->streams[input->stream.index] = &input->stream;
+        input->context.nb_streams = 2;
+        /* As long as the pictures. */
+        input->chunks = (int)((int64_t)codec.frames * codec.rate / codec.fps / CHUNK);
+    }
     bool cover = strstr(text, " cover") != NULL, extra = strstr(text, " extra") != NULL;
     if (cover || extra) {
         input->third_codec.codec_type = MAINUI_AVMEDIA_TYPE_VIDEO;
@@ -226,15 +285,19 @@ int avformat_find_stream_info(MainUIAVFormatContext *context, void **options)
 int av_find_best_stream(MainUIAVFormatContext *context, int type, int wanted, int related,
                         void **found, int flags)
 {
-    (void)context;
     (void)wanted;
     (void)related;
     (void)flags;
-    if (type != MAINUI_AVMEDIA_TYPE_VIDEO) {
-        return -1;
+    StubInput *input = (StubInput *)context;
+    if (type == MAINUI_AVMEDIA_TYPE_VIDEO) {
+        *found = (void *)&decoder;
+        return input->stream.index;
     }
-    *found = (void *)&decoder;
-    return 0;
+    if (type == MAINUI_AVMEDIA_TYPE_AUDIO && context->nb_streams > 1) {
+        *found = (void *)&sound_decoder;
+        return input->sound_stream.index;
+    }
+    return -1381258232; /* AVERROR_STREAM_NOT_FOUND */
 }
 
 void av_init_packet(MainUIAVPacket *packet)
@@ -253,39 +316,62 @@ void av_free_packet(MainUIAVPacket *packet)
 int av_read_frame(MainUIAVFormatContext *context, MainUIAVPacket *packet)
 {
     StubInput *input = (StubInput *)context;
+    StubCodec *codec = &input->codec;
     if (input->wait_read) {
         input->wait_read = false;
         if (interrupted_wait(context)) {
             return STUB_AVERROR_EXIT;
         }
     }
-    if (input->next >= input->codec.frames) {
+    bool picture = input->next < codec->frames;
+    bool sound = input->next_sound < input->chunks;
+    /* By time: the earlier of the next picture and the next sound, the
+     * sound counted lag ms later. */
+    if (picture && sound &&
+        (int64_t)input->next_sound * CHUNK * 1000 / codec->rate + codec->lag >=
+            (int64_t)input->next * 1000 / codec->fps) {
+        sound = false;
+    }
+    if (!picture && !sound) {
         return -541478725; /* AVERROR_EOF */
     }
-    int index = input->next++;
-    memcpy(input->packet, &index, sizeof index);
-    packet->data = input->packet;
-    packet->size = (int)sizeof input->packet;
-    packet->stream_index = 0;
-    packet->pts = (int64_t)index * 90000 / input->codec.fps;
+    int index = sound ? input->next_sound++ : input->next++;
+    bool big = !sound && input->big;
+    packet->data = big ? input->big : input->packet;
+    packet->size = big ? codec->packet : (int)sizeof input->packet;
+    memcpy(packet->data, &index, sizeof index);
+    packet->stream_index = sound ? input->sound_stream.index : input->stream.index;
+    packet->pts = sound ? (int64_t)index * CHUNK : (int64_t)index * 90000 / codec->fps;
     return 0;
 }
 
 int av_seek_frame(MainUIAVFormatContext *context, int stream, int64_t timestamp, int flags)
 {
     (void)stream;
-    (void)timestamp;
-    (void)flags;
     StubInput *input = (StubInput *)context;
-    if (input->codec.noseek) {
+    StubCodec *codec = &input->codec;
+    if (codec->noseek) {
         return -1;
     }
-    input->next = 0;
+    int64_t frame = timestamp * codec->fps / 90000;
+    /* To the keyframe at or before it, or with no flag, at or after it:
+     * none there is an error. */
+    if (codec->gop > 0 && frame > 0) {
+        bool backward = flags & MAINUI_AVSEEK_FLAG_BACKWARD;
+        frame = (frame + (backward ? 0 : codec->gop - 1)) / codec->gop * codec->gop;
+        if (frame >= codec->frames) {
+            return -1;
+        }
+    }
+    input->next = frame < 0 ? 0 : frame > codec->frames ? codec->frames : (int)frame;
+    input->next_sound =
+        codec->rate ? (int)((int64_t)input->next * codec->rate / codec->fps / CHUNK) : 0;
     return 0;
 }
 
 void avformat_close_input(MainUIAVFormatContext **context)
 {
+    release(((StubInput *)*context)->big);
     release(*context);
     *context = NULL;
 }
@@ -294,7 +380,8 @@ int avcodec_open2(void *context, const void *codec, void **options)
 {
     (void)options;
     StubCodec *stub = context;
-    if (codec != &decoder || stub->nocodec) {
+    if (codec != (stub->sound ? (const void *)&sound_decoder : (const void *)&decoder) ||
+        (stub->sound ? stub->nosoundcodec : stub->nocodec)) {
         return -1;
     }
     stub->opened++;
@@ -314,6 +401,7 @@ int avcodec_close(void *context)
 void avcodec_flush_buffers(void *context)
 {
     ((StubCodec *)context)->pending = -1;
+    ((StubCodec *)context)->expect = -1;
 }
 
 int avcodec_decode_video2(void *context, MainUIAVFrame *frame, int *got,
@@ -324,6 +412,12 @@ int avcodec_decode_video2(void *context, MainUIAVFrame *frame, int *got,
     int out = codec->pending;
     if (packet && packet->size > 0) {
         memcpy(&codec->pending, packet->data, sizeof codec->pending);
+        /* Pictures depend on the ones before: decode order is read order. */
+        if (codec->expect >= 0 && codec->pending != codec->expect) {
+            fprintf(stderr, "[ffstub] picture %d decoded where %d was due\n", codec->pending,
+                    codec->expect);
+        }
+        codec->expect = codec->pending + 1;
     }
     else {
         codec->pending = -1;
@@ -352,6 +446,27 @@ int avcodec_decode_video2(void *context, MainUIAVFrame *frame, int *got,
     return packet ? packet->size : 0;
 }
 
+int avcodec_decode_audio4(void *context, MainUIAVFrame *frame, int *got,
+                          const MainUIAVPacket *packet)
+{
+    StubCodec *codec = context;
+    StubFrame *stub = (StubFrame *)frame;
+    int chunk = 0;
+    memcpy(&chunk, packet->data, sizeof chunk);
+    for (int i = 0; i < CHUNK * 2; i++) {
+        stub->samples[i] = (int16_t)(chunk + 1);
+    }
+    stub->planes[0] = (uint8_t *)stub->samples;
+    frame->extended_data = stub->planes;
+    frame->nb_samples = CHUNK;
+    frame->format = MAINUI_AV_SAMPLE_FMT_S16;
+    stub->rate = codec->rate;
+    stub->channels = 2;
+    stub->best = codec->nopts ? MAINUI_AV_NOPTS_VALUE : (int64_t)chunk * CHUNK;
+    *got = 1;
+    return packet->size;
+}
+
 MainUIAVFrame *av_frame_alloc(void)
 {
     StubFrame *frame = allocate(sizeof *frame);
@@ -367,6 +482,71 @@ void av_frame_free(MainUIAVFrame **frame)
 int64_t av_frame_get_best_effort_timestamp(const MainUIAVFrame *frame)
 {
     return ((const StubFrame *)frame)->best;
+}
+
+int av_frame_get_sample_rate(const MainUIAVFrame *frame)
+{
+    return ((const StubFrame *)frame)->rate;
+}
+
+int av_frame_get_channels(const MainUIAVFrame *frame)
+{
+    return ((const StubFrame *)frame)->channels;
+}
+
+int64_t av_frame_get_channel_layout(const MainUIAVFrame *frame)
+{
+    (void)frame;
+    return 0; /* unknown: the default layout is asked for */
+}
+
+int64_t av_get_default_channel_layout(int channels)
+{
+    return channels == 2 ? MAINUI_AV_CH_LAYOUT_STEREO : 0;
+}
+
+void *swr_alloc_set_opts(void *context, int64_t out_layout, int out_format, int out_rate,
+                         int64_t in_layout, int in_format, int in_rate, int log_offset, void *log)
+{
+    (void)log_offset;
+    (void)log;
+    if (out_layout != MAINUI_AV_CH_LAYOUT_STEREO || in_layout != MAINUI_AV_CH_LAYOUT_STEREO ||
+        out_format != MAINUI_AV_SAMPLE_FMT_S16 || in_format != MAINUI_AV_SAMPLE_FMT_S16) {
+        return NULL;
+    }
+    StubResampler *resampler = context ? context : allocate(sizeof *resampler);
+    if (resampler) {
+        *resampler = (StubResampler){in_rate, out_rate};
+    }
+    return resampler;
+}
+
+int swr_init(void *context)
+{
+    StubResampler *resampler = context;
+    return resampler->in_rate > 0 && resampler->out_rate > 0 ? 0 : -1;
+}
+
+/* Nearest sample: the values carry over at any rate. */
+int swr_convert(void *context, uint8_t **out, int room, const uint8_t **in, int count)
+{
+    StubResampler *resampler = context;
+    int made = (int)((int64_t)count * resampler->out_rate / resampler->in_rate);
+    made = made < room ? made : room;
+    const int16_t *from = (const int16_t *)in[0];
+    int16_t *to = (int16_t *)out[0];
+    for (int i = 0; i < made; i++) {
+        int source = (int)((int64_t)i * resampler->in_rate / resampler->out_rate);
+        to[2 * i] = from[2 * source];
+        to[2 * i + 1] = from[2 * source + 1];
+    }
+    return made;
+}
+
+void swr_free(void **context)
+{
+    release(*context);
+    *context = NULL;
 }
 
 void *sws_getCachedContext(void *context, int src_w, int src_h, int src_format, int dst_w,
@@ -398,7 +578,7 @@ int sws_scale(void *context, const uint8_t *const source[], const int source_pit
     (void)y;
     StubScaler *scaler = context;
     int index = source[0][0];
-    uint8_t r = (uint8_t)(index * 40), g = (uint8_t)(255 - index * 40), b = 100;
+    uint8_t r = (uint8_t)index, g = (uint8_t)(255 - index), b = 100;
     uint8_t pixel[4];
     switch (scaler->format) {
     case MAINUI_AV_PIX_FMT_BGRA:

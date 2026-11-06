@@ -4,7 +4,8 @@
 #include <stdint.h>
 
 /* The FFmpeg that Onion ships in .tmp_update/lib/parasyte, 2.4.14
- * (libavformat 56, libavcodec 56, libavutil 54, libswscale 3), is loaded
+ * (libavformat 56, libavcodec 56, libavutil 54, libswscale 3, libswresample
+ * 1), is loaded
  * with dlopen() only when a video plays; MainUI neither links nor ships it.
  * These are the leading fields of the structures MainUI reads, declared with
  * the types of FFmpeg 2.4.14's own headers, so the compiler lays them out as
@@ -219,8 +220,10 @@ typedef struct {
 
 enum {
     MAINUI_AVMEDIA_TYPE_VIDEO = 0,
+    MAINUI_AVMEDIA_TYPE_AUDIO = 1,
     MAINUI_AV_CODEC_ID_NONE = 0,
     MAINUI_AV_DISPOSITION_ATTACHED_PIC = 0x0400,
+    MAINUI_AV_SAMPLE_FMT_S16 = 1,
     MAINUI_AV_LOG_QUIET = -8,
     MAINUI_AVSEEK_FLAG_BACKWARD = 1,
     MAINUI_SWS_FAST_BILINEAR = 1,
@@ -232,6 +235,7 @@ enum {
 };
 
 #define MAINUI_AV_NOPTS_VALUE ((int64_t)UINT64_C(0x8000000000000000))
+#define MAINUI_AV_CH_LAYOUT_STEREO 3 /* AV_CH_FRONT_LEFT | AV_CH_FRONT_RIGHT */
 
 /* The functions looked up, with their 2.4 signatures. */
 typedef struct {
@@ -259,6 +263,16 @@ typedef struct {
     int (*sws_scale)(void *, const uint8_t *const[], const int[], int, int, uint8_t *const[],
                      const int[]);
     void (*sws_freeContext)(void *);
+    /* Sound: optional, a video plays silently without any of these. */
+    int (*avcodec_decode_audio4)(void *, MainUIAVFrame *, int *, const MainUIAVPacket *);
+    int (*av_frame_get_sample_rate)(const MainUIAVFrame *);
+    int64_t (*av_frame_get_channel_layout)(const MainUIAVFrame *);
+    int (*av_frame_get_channels)(const MainUIAVFrame *);
+    int64_t (*av_get_default_channel_layout)(int);
+    void *(*swr_alloc_set_opts)(void *, int64_t, int, int, int64_t, int, int, int, void *);
+    int (*swr_init)(void *);
+    int (*swr_convert)(void *, uint8_t **, int, const uint8_t **, int);
+    void (*swr_free)(void **);
 } MainUIFFmpeg;
 
 #endif
