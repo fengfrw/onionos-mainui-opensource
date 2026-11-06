@@ -274,7 +274,16 @@ int main(int argc, char **argv)
     snprintf(path, sizeof path, "%s/Metadata/TooMany/target.nes", sd);
     assert(!mainui_gamelist_metadata(path, NULL, &metadata) && !metadata.found);
     snprintf(path, sizeof path, "%s/Metadata/LargeRecord/target.nes", sd);
-    assert(!mainui_gamelist_metadata(path, NULL, &metadata) && !metadata.found);
+    /* An oversized record is safely skipped; no metadata is returned. */
+    assert(mainui_gamelist_metadata(path, NULL, &metadata) && !metadata.found);
+    /* Oversized records with the same hash must not mask another game. */
+    TEST_PATH(path, "%s/Metadata/Collision/game0b1b7ef0.nes", sd);
+    assert(mainui_gamelist_metadata(path, NULL, &metadata) && metadata.found);
+    assert(!strcmp(metadata.genre, "Collision"));
+    TEST_PATH(root, "%s/Metadata/Collision", sd);
+    TEST_PATH(path, "%s/Folder/game0b1b7ef0.nes", root);
+    assert(mainui_gamelist_metadata(path, root, &metadata) && metadata.found);
+    assert(!strcmp(metadata.genre, "Root fallback"));
     mainui_gamelist_metadata_close();
     MainUILibraryItem item = {.rom = "/mnt/SDCARD/Roms/Normal/alpha.nes"};
     MainUILibrary library = {.items = &item, .count = 1};

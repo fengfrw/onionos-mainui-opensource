@@ -1073,7 +1073,7 @@ static bool read_metadata(const char *directory, size_t directory_length, const 
     for (; low < index->count && index->records[low].hash == hash; low++) {
         MetadataRecord record = index->records[low];
         if (record.length > METADATA_READ) {
-            return false;
+            continue; /* hash collision: another record may match */
         }
         FILE *file = fopen(path, "rb");
         if (!file) {
