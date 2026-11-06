@@ -209,11 +209,32 @@ bool mainui_poll_jobs(MainUIApp *ui)
                 ui->confirmation = -1;
                 ui->return_latched = false;
             }
-            if (refresh_due && ui->real_device && !ui->device_job.thread && !ui->snapshot) {
-                cJSON *system = mainui_system_read(ui->sd);
-                const cJSON *wifi = cJSON_GetObjectItemCaseSensitive(system, "wifi");
-                bool wifi_disabled = cJSON_IsNumber(wifi) && wifi->valuedouble == 0;
-                cJSON_Delete(system);
+            if (refresh_due && ui->real_device && ui->device_status.model.wifi &&
+                !ui->device_job.thread && !ui->snapshot) {
+                /* A status poll checks the SD card's stamp, not its JSON, if
+                 * system.json has not changed since the last poll. */
+                static MainUIFileStamp system_stamp;
+                static char system_sd[4096];
+                static bool known, wifi_disabled;
+                char path[4096];
+                int n = snprintf(path, sizeof path, "%s/system.json", ui->sd);
+                if (n > 0 && n < (int)sizeof path) {
+                    MainUIFileStamp current = mainui_file_stamp(path);
+                    if (!known || strcmp(system_sd, ui->sd) ||
+                        !mainui_file_stamp_equal(system_stamp, current)) {
+                        cJSON *system = mainui_system_read(ui->sd);
+                        const cJSON *wifi = cJSON_GetObjectItemCaseSensitive(system, "wifi");
+                        wifi_disabled = cJSON_IsNumber(wifi) && wifi->valuedouble == 0;
+                        cJSON_Delete(system);
+                        system_stamp = current;
+                        snprintf(system_sd, sizeof system_sd, "%s", ui->sd);
+                        known = true;
+                    }
+                }
+                else {
+                    wifi_disabled = false;
+                    known = false;
+                }
                 if (!wifi_disabled) {
                     mainui_device_job_start(&ui->device_job, &ui->device_adapter, 0, NULL, NULL);
                 }
