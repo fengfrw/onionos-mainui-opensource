@@ -349,7 +349,14 @@ int mainui_preview_edge(const MainUITheme *theme)
 
 void mainui_preview_draw(MainUIPreview *preview, const MainUITheme *theme, SDL_Surface *screen)
 {
-    if (!preview->image) {
+    mainui_preview_draw_image(preview, theme, screen, NULL);
+}
+
+void mainui_preview_draw_image(MainUIPreview *preview, const MainUITheme *theme,
+                               SDL_Surface *screen, SDL_Surface *image)
+{
+    image = image ? image : preview->image;
+    if (!image) {
         return;
     }
     /* Stock 0x31698 overlays the theme background after the list. At 0x31794
@@ -359,7 +366,7 @@ void mainui_preview_draw(MainUIPreview *preview, const MainUITheme *theme, SDL_S
         SDL_Rect background = {(Sint16)edge, 60, 0, 0};
         SDL_BlitSurface(theme->preview_background, NULL, screen, &background);
     }
-    SDL_Rect destination = {(Sint16)(edge + (250 - preview->image->w) / 2),
-                            (Sint16)(60 + (360 - preview->image->h) / 2), 0, 0};
-    SDL_BlitSurface(preview->image, NULL, screen, &destination);
+    SDL_Rect destination = {(Sint16)(edge + (250 - image->w) / 2),
+                            (Sint16)(60 + (360 - image->h) / 2), 0, 0};
+    SDL_BlitSurface(image, NULL, screen, &destination);
 }

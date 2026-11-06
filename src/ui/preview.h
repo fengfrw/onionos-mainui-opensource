@@ -56,5 +56,9 @@ void mainui_preview_update(MainUIPreview *preview, MainUICatalog *catalog,
                            const MainUILibrary *library, int selected);
 int mainui_preview_edge(const MainUITheme *theme);
 void mainui_preview_draw(MainUIPreview *preview, const MainUITheme *theme, SDL_Surface *screen);
+/* As mainui_preview_draw(), with image (a video frame) in place of the
+ * cover, or the cover when image is NULL. */
+void mainui_preview_draw_image(MainUIPreview *preview, const MainUITheme *theme,
+                               SDL_Surface *screen, SDL_Surface *image);
 void mainui_preview_close(MainUIPreview *preview);
 #endif

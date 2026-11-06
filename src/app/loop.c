@@ -186,6 +186,8 @@ bool mainui_poll_jobs(MainUIApp *ui)
                 mainui_audio_pause(!resumed && ui->device_status.sleeping == 1);
                 mainui_media_sleep(&ui->details.media, !resumed && ui->device_status.sleeping == 1,
                                    now);
+                /* A list's preview stops; it starts again on waking. */
+                mainui_list_video_sleep(&ui->list_video);
                 memset(ui->held, 0, sizeof ui->held);
                 /* As on focus loss: a release after sleep is no press. */
                 ui->x_armed = ui->y_armed = ui->select_armed = ui->start_armed = false;
@@ -433,6 +435,11 @@ int mainui_wait_interval(const MainUIApp *ui, Uint32 now)
     if (due >= 0 && due < interval) {
         interval = due > 0 ? due : 1;
     }
+    /* Likewise a list's video preview, and the moment it is to start. */
+    due = mainui_list_video_due(&ui->list_video, now);
+    if (due >= 0 && due < interval) {
+        interval = due > 0 ? due : 1;
+    }
     if (ui->catalog_job.thread) {
         Uint32 elapsed = now - ui->catalog_job.started_at;
         if (elapsed < 500 && (Uint32)interval > 500 - elapsed) {
@@ -594,8 +601,12 @@ bool mainui_wait_event(MainUIApp *ui, SDL_Event *event)
     if (!scripted_event && (ui->handheld_input || ui->real_device)) {
         mainui_input_device_event(event);
     }
+    /* A video's frames are not input: a list's preview keeps its partial
+     * frames, and the gallery redraws for them anyway. */
     ui->idle_tick = event->type == SDL_USEREVENT && (event->user.code == MAINUI_TICK_CODE ||
-                                                     event->user.code == MAINUI_STATUS_CODE);
+                                                     event->user.code == MAINUI_STATUS_CODE ||
+                                                     event->user.code == MAINUI_VIDEO_CODE);
+    ui->video_wake = event->type == SDL_USEREVENT && event->user.code == MAINUI_VIDEO_CODE;
     if (!ui->idle_tick) {
         ui->active_at = SDL_GetTicks();
     }

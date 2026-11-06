@@ -474,6 +474,18 @@ static void idle_frame(MainUIApp *ui)
     ui->presented_animating = true;
     assert(mainui_frame_marquee_only(ui, 2500) && mainui_frame_marquee_only(ui, 20000));
     assert(!mainui_frame_marquee_only(ui, 32000));
+    /* A video frame then waits for the title's next paced frame. */
+    assert(!mainui_frame_current(ui, 2500));
+    ui->video_wake = ui->marquee_paced = true;
+    assert(mainui_frame_current(ui, 2500));
+    ui->marquee_paced = false;
+    assert(!mainui_frame_current(ui, 2500));
+    ui->marquee_paced = true;
+    ui->presented_animating = false;
+    ui->list_video.changed = true;
+    assert(!mainui_frame_current(ui, 2500));
+    ui->presented_animating = true;
+    ui->video_wake = ui->marquee_paced = ui->list_video.changed = false;
     ui->idle_tick = false;
     assert(!mainui_frame_marquee_only(ui, 2500));
     free(ui->catalog);
@@ -516,6 +528,20 @@ static void selection_identity(MainUIApp *ui)
     item.identity = "replacement";
     mainui_prepare_frame(ui);
     assert(ui->selected_at != (Uint32)-10000);
+    /* A console Search's rows have no identity; two with one title are told
+     * apart by their ROM, so a move between them is a new selection. */
+    MainUILibraryItem same[2] = {{.label = "Game", .rom = "/Roms/Game (A).zip"},
+                                 {.label = "Game", .rom = "/Roms/Game (B).zip"}};
+    library->items = same;
+    library->count = library->visible_count = 2;
+    library->visible[1] = 1;
+    mainui_prepare_frame(ui);
+    char first[sizeof ui->selected_identity];
+    strcpy(first, ui->selected_identity);
+    ui->view.selected = 1;
+    mainui_prepare_frame(ui);
+    assert(strcmp(first, ui->selected_identity));
+    ui->view.selected = 0;
     free(library);
     free(catalog);
     reset(ui);

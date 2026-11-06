@@ -10,6 +10,9 @@
  * The thread exists only while the video is open. UI thread only. */
 typedef struct MainUIVideo MainUIVideo;
 
+/* The SDL_USEREVENT code the decoder posts for a decoded frame or an error. */
+#define MAINUI_VIDEO_CODE 3
+
 /* Videos larger than this are not played (decoder memory on the Mini): every
  * video stream must state a size within it before FFmpeg probes the file,
  * which can decode, and a decoder is refused the buffer for a larger picture,

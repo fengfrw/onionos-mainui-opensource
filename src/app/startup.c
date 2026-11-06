@@ -748,6 +748,8 @@ int mainui_teardown(MainUIApp *ui)
             SDL_WaitThread(ui->preview.thread, NULL);
             ui->preview.thread = NULL;
         }
+        /* A list's video decoder still posts SDL events: stopped first. */
+        mainui_list_video_stop(&ui->list_video);
         mainui_audio_close();
         quit_sdl(ui);
         mainui_mark(MAINUI_MARK_EXIT);
@@ -786,6 +788,7 @@ int mainui_teardown(MainUIApp *ui)
     mainui_favorite_editor_close(&ui->favorite_editor);
     mainui_languages_close(&ui->languages);
     mainui_language_close();
+    mainui_list_video_stop(&ui->list_video);
     mainui_details_close(&ui->details);
     mainui_gamelist_metadata_close();
     mainui_preview_close(&ui->preview);

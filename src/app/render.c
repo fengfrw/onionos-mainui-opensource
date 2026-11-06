@@ -117,6 +117,62 @@ static void draw_list_counter(SDL_Surface *screen, MainUITheme *theme, const Mai
     mainui_draw_footer(screen, theme, current, total);
 }
 
+/* The selected game's video in place of its cover (.romListVideoPreview):
+ * started once the selection has stayed for the delay, and stopped by any
+ * change of selection or screen. Only on a list with nothing over it. */
+static void update_list_video(MainUIApp *ui)
+{
+    MainUIListVideo *preview = &ui->list_video;
+    Uint32 now = SDL_GetTicks();
+    int delay = ui->config.video_preview_delay;
+    bool list = delay >= 0 && !ui->home && !ui->apps && ui->catalog &&
+                (ui->library || ui->catalog->depth) && !ui->details.open && !ui->settings_open &&
+                !ui->settings_page.open && !ui->language_open && !ui->context_open &&
+                ui->confirmation < 0 && !*ui->message_title && !ui->name_input.open &&
+                !ui->search_keyboard && !ui->launch_pending && !ui->catalog_job.thread &&
+                !ui->letter_jump.active && ui->device_status.sleeping != 1 &&
+                ui->view.selected >= 0 && ui->view.selected < ui->view.total;
+    if (!list) {
+        if (ui->device_status.sleeping == 1) {
+            mainui_list_video_sleep(preview);
+        }
+        else {
+            mainui_list_video_stop(preview);
+        }
+        return;
+    }
+    if (*preview->key && !strcmp(preview->key, ui->selected_identity)) {
+        mainui_list_video_advance(preview, now);
+        return;
+    }
+    mainui_list_video_stop(preview);
+    /* A snapshot plays each selection's video at the instant it gives. */
+    Uint32 elapsed = ui->snapshot ? ui->snapshot_elapsed : now - ui->selected_at;
+    if (elapsed < (Uint32)delay) {
+        preview->waiting = true;
+        preview->start_at = ui->selected_at + (Uint32)delay;
+        return;
+    }
+
+    /* 16 KiB of paths: kept off the stack. */
+    struct {
+        char rom[MAINUI_PATH_MAX], root[MAINUI_PATH_MAX], path[4096], library_dir[4096];
+    } *paths = malloc(sizeof *paths);
+
+    bool found = paths &&
+                 mainui_details_locate(ui->catalog, ui->library, ui->view.selected, paths->rom,
+                                       paths->root) &&
+                 mainui_media_video(paths->root, paths->rom, paths->path);
+    if (paths) {
+        snprintf(paths->library_dir, sizeof paths->library_dir, "%s/.tmp_update/lib/parasyte",
+                 ui->sd);
+    }
+    mainui_list_video_start(preview, ui->selected_identity, found ? paths->path : NULL,
+                            paths ? paths->library_dir : NULL, ui->screen, now,
+                            ui->config.video_preview_fullscreen, ui->snapshot != NULL);
+    free(paths);
+}
+
 void mainui_prepare_frame(MainUIApp *ui)
 {
     if (!ui->home && !ui->library && ui->catalog) {
@@ -174,9 +230,13 @@ void mainui_prepare_frame(MainUIApp *ui)
         label = mainui_library_label(ui->library, selection);
         int row = ui->library->visible[selection];
         container = ui->library->current >= 0 ? ui->library->folders[ui->library->current].id : "";
-        key = row == INT_MIN ? ".."
-              : row < 0      ? ui->library->folders[-row - 1].id
-                             : ui->library->items[row].identity;
+        /* A console Search's rows have no identity: their ROM tells two
+         * games with one title apart, for their video previews too. */
+        const MainUILibraryItem *item = row >= 0 ? &ui->library->items[row] : NULL;
+        key = row == INT_MIN                      ? ".."
+              : row < 0                           ? ui->library->folders[-row - 1].id
+              : item->identity && *item->identity ? item->identity
+                                                  : item->rom;
     }
     else if (section == 4 && ui->catalog) {
         container = ui->catalog->pages[ui->catalog->depth].path;
@@ -214,6 +274,7 @@ void mainui_prepare_frame(MainUIApp *ui)
     ui->sound_section = section;
     ui->sound_selection = selection;
     ui->animate = ui->letter_jump.active;
+    update_list_video(ui);
     SDL_Event queued_input;
     ui->draw_frame =
         ui->snapshot || ui->input_script ||
@@ -269,14 +330,22 @@ bool mainui_load_deferred_icons(MainUIApp *ui)
 
 bool mainui_frame_current(const MainUIApp *ui, Uint32 now)
 {
+    /* A video's new frame while a title scrolls on paced frames waits for
+     * the next of them, which draws both: drawn at once, it came between
+     * the title's frames and held the next one up, so the title stuttered. */
+    if (ui->video_wake && ui->marquee_paced && ui->presented_animating &&
+        idle_unchanged(ui, now, MARQUEE_REPAINT_MS)) {
+        return true;
+    }
     return idle_unchanged(ui, now, IDLE_REPAINT_MS) && !ui->presented_animating &&
-           now - ui->active_at >= IDLE_SETTLE_MS;
+           !ui->list_video.changed && now - ui->active_at >= IDLE_SETTLE_MS;
 }
 
-/* Scrolling titles otherwise repaint, rotate and flip the whole frame at 30 fps. */
-bool mainui_frame_marquee_only(const MainUIApp *ui, Uint32 now)
+/* A list frame that can be recomposed in part: nothing but time changed,
+ * and a video preview neither started nor ended (its frame changes the title
+ * lanes, as a cover does). */
+static bool list_partial(const MainUIApp *ui, Uint32 now)
 {
-    int row = ui->view.selected - ui->view.start;
     bool list = !ui->home && !ui->apps && (ui->library || ui->list || ui->catalog) &&
                 !(ui->catalog && !ui->library && !ui->catalog->depth);
     /* Lists with the empty panel over their rows always take the full path. */
@@ -284,9 +353,25 @@ bool mainui_frame_marquee_only(const MainUIApp *ui, Uint32 now)
                  (ui->catalog && !ui->library && ui->catalog->depth > 1 && ui->view.total == 1) ||
                  (ui->library && ui->library->current >= 0 && ui->library->visible_count == 1 &&
                   ui->library->visible[0] == INT_MIN);
-    return idle_unchanged(ui, now, MARQUEE_REPAINT_MS) && ui->presented_animating && list &&
-           !empty && row >= 0 && row < ui->config.rows && ui->view.selected < ui->view.total &&
-           ui->config.row_height > 0 && 60 + (row + 1) * ui->config.row_height <= 420;
+    /* A fullscreen video repaints the whole frame, as the gallery does. */
+    return idle_unchanged(ui, now, MARQUEE_REPAINT_MS) && list && !empty &&
+           !mainui_list_video_fullscreen(&ui->list_video) &&
+           ui->presented_video == (ui->list_video.frame != NULL);
+}
+
+/* Scrolling titles otherwise repaint, rotate and flip the whole frame at 30 fps. */
+bool mainui_frame_marquee_only(const MainUIApp *ui, Uint32 now)
+{
+    int row = ui->view.selected - ui->view.start;
+    return list_partial(ui, now) && ui->presented_animating && row >= 0 && row < ui->config.rows &&
+           ui->view.selected < ui->view.total && ui->config.row_height > 0 &&
+           60 + (row + 1) * ui->config.row_height <= 420;
+}
+
+/* A video preview's new frame otherwise repaints the whole frame too. */
+static bool cover_only(const MainUIApp *ui, Uint32 now)
+{
+    return list_partial(ui, now) && ui->list_video.frame && ui->list_video.changed;
 }
 
 /* Set only while the host check re-composes a frame for the same instant. */
@@ -299,9 +384,24 @@ static Uint32 list_elapsed(const MainUIApp *ui)
                           : SDL_GetTicks() - ui->selected_at;
 }
 
-/* One list row, clipped to its own rectangle. Shared by full frames and
- * marquee-only frames so both compose the row identically. */
-static void draw_list_row(MainUIApp *ui, int i, Uint32 elapsed)
+/* Whether a cover, or a video in its place, is shown: titles stop at it. */
+static bool cover_shown(const MainUIApp *ui)
+{
+    return ui->preview.image || (ui->list_video.frame && !ui->list_video.fullscreen);
+}
+
+static SDL_Rect intersect(SDL_Rect a, SDL_Rect b)
+{
+    int left = a.x > b.x ? a.x : b.x, top = a.y > b.y ? a.y : b.y;
+    int right = a.x + a.w < b.x + b.w ? a.x + a.w : b.x + b.w;
+    int bottom = a.y + a.h < b.y + b.h ? a.y + a.h : b.y + b.h;
+    return (SDL_Rect){(Sint16)left, (Sint16)top, (Uint16)(right > left ? right - left : 0),
+                      (Uint16)(bottom > top ? bottom - top : 0)};
+}
+
+/* One list row, clipped to its own rectangle and to bound when given. Shared
+ * by full and partial frames so both compose the row identically. */
+static void draw_list_row(MainUIApp *ui, int i, Uint32 elapsed, const SDL_Rect *bound)
 {
     int list_origin = 0;
     int list_width = 640;
@@ -310,6 +410,9 @@ static void draw_list_row(MainUIApp *ui, int i, Uint32 elapsed)
     int y = 60 + i * ui->config.row_height;
     SDL_Rect clip = {(Sint16)list_origin, (Sint16)y, (Uint16)list_width,
                      (Uint16)ui->config.row_height};
+    if (bound) {
+        clip = intersect(clip, *bound);
+    }
     SDL_SetClipRect(ui->screen, &clip);
     bool selected = ui->view.start + i == ui->view.selected;
     if (selected) {
@@ -334,8 +437,7 @@ static void draw_list_row(MainUIApp *ui, int i, Uint32 elapsed)
         ui->theme.favorite && !folder_row) {
         bool spacer = ui->theme.icon && ui->theme.icon->w >= 120 &&
                       ui->theme.icon->w >= 3 * ui->theme.icon->h;
-        int origin =
-            spacer || (ui->config.dynamic_favorite_position && !ui->preview.image) ? 0 : 250;
+        int origin = spacer || (ui->config.dynamic_favorite_position && !cover_shown(ui)) ? 0 : 250;
         int marker_x = 640 - ui->theme.favorite->w - origin - 20;
         blit(ui->theme.favorite, ui->screen, marker_x,
              y + (ui->config.row_height - ui->theme.favorite->h) / 2);
@@ -350,7 +452,7 @@ static void draw_list_row(MainUIApp *ui, int i, Uint32 elapsed)
     * clip. Only overflow activation uses the live ui->preview edge. */
     int activation_width = available;
     int pane_width = mainui_preview_edge(&ui->theme) - text_x;
-    if (ui->preview.image && pane_width > 0 && pane_width < activation_width) {
+    if (cover_shown(ui) && pane_width > 0 && pane_width < activation_width) {
         activation_width = pane_width;
     }
     /* A right-to-left title shows its right end, where it begins: with a
@@ -427,9 +529,9 @@ static void draw_list_row(MainUIApp *ui, int i, Uint32 elapsed)
     }
 }
 
-/* Rotate (on the device) and flip. A rectangle limits the rotated copy; the
+/* Rotate (on the device) and flip. Rectangles limit the rotated copy; the
  * logical frame stays upright and complete for later partial frames. */
-static void present(MainUIApp *ui, const SDL_Rect *area)
+static void present(MainUIApp *ui, const SDL_Rect *areas, int count)
 {
     /* Spacing of consecutive animation frames, for the timing report. */
     static Uint32 previous;
@@ -444,21 +546,27 @@ static void present(MainUIApp *ui, const SDL_Rect *area)
     }
     previous = now;
     ui->presented_animating = ui->animate;
-    SDL_Rect shown = area ? *area : (SDL_Rect){0, 0, 0, 0};
+    SDL_Rect shown[2] = {{0, 0, 0, 0}, {0, 0, 0, 0}};
+    count = areas && count > 0 ? (count > 2 ? 2 : count) : 0;
+    for (int i = 0; i < count; i++) {
+        shown[i] = areas[i];
+    }
     if (ui->real_device) {
         /* Copy inverted pixels directly to the display. */
-        if (area) {
-            shown = mainui_rotated_rect(ui->screen, *area);
-            SDL_SetClipRect(ui->display, &shown);
+        for (int i = 0; i < (count ? count : 1); i++) {
+            if (count) {
+                shown[i] = mainui_rotated_rect(ui->screen, areas[i]);
+                SDL_SetClipRect(ui->display, &shown[i]);
+            }
+            mainui_blit_rotated(ui->screen, ui->display);
         }
-        mainui_blit_rotated(ui->screen, ui->display);
         SDL_SetClipRect(ui->display, NULL);
     }
     /* Without double buffering SDL_Flip is SDL_UpdateRect of the whole screen
-     * (Onion's SDL: "use SDL_UpdateRect when flip"). A row-only frame updates
-     * just its rectangle: less copying and a far smaller window for tearing. */
-    if (area && !(ui->display->flags & SDL_DOUBLEBUF)) {
-        SDL_UpdateRects(ui->display, 1, &shown);
+     * (Onion's SDL: "use SDL_UpdateRect when flip"). A partial frame updates
+     * just its rectangles: less copying and a far smaller window for tearing. */
+    if (count && !(ui->display->flags & SDL_DOUBLEBUF)) {
+        SDL_UpdateRects(ui->display, count, shown);
         mainui_count_add("frames", 1);
     }
     else if (SDL_Flip(ui->display) == 0) {
@@ -531,6 +639,14 @@ static bool compose_full_frame(MainUIApp *ui)
     }
     else if (ui->details.media.open) {
         mainui_media_draw(&ui->details.media, &ui->theme, ui->screen, ui->snapshot);
+    }
+    else if (mainui_list_video_fullscreen(&ui->list_video)) {
+        /* A list's fullscreen video preview, fitted and centred on black,
+         * over header and footer; the list under it is not drawn. */
+        SDL_Surface *frame = ui->list_video.frame;
+        SDL_FillRect(ui->screen, NULL, SDL_MapRGB(ui->screen->format, 0, 0, 0));
+        mainui_blit(ui->screen, frame, (ui->screen->w - frame->w) / 2,
+                    (ui->screen->h - frame->h) / 2);
     }
     else if (ui->details.open) {
         mainui_details_progress(&ui->details, ui->snapshot ? MAINUI_PREVIEW_WAIT_FOREVER : 0);
@@ -651,11 +767,12 @@ static bool compose_full_frame(MainUIApp *ui)
         ui->preview_sync_once = false;
         Uint32 elapsed = list_elapsed(ui);
         for (int i = 0; i < ui->config.rows && ui->view.start + i < ui->view.total; i++) {
-            draw_list_row(ui, i, elapsed);
+            draw_list_row(ui, i, elapsed, NULL);
         }
         /* Row clips must never leak into the next frame's header/background. */
         SDL_SetClipRect(ui->screen, NULL);
-        mainui_preview_draw(&ui->preview, &ui->theme, ui->screen);
+        mainui_preview_draw_image(&ui->preview, &ui->theme, ui->screen,
+                                  ui->list_video.fullscreen ? NULL : ui->list_video.frame);
         if (!ui->view.total ||
             (ui->catalog && !ui->library && ui->catalog->depth > 1 && ui->view.total == 1) ||
             (ui->library && ui->library->current >= 0 && ui->library->visible_count == 1 &&
@@ -733,25 +850,68 @@ static bool draw_full_frame(MainUIApp *ui)
     ui->presented_wifi_signal = ui->theme.wifi_signal_level;
     snprintf(ui->presented_wifi_address, sizeof ui->presented_wifi_address, "%s",
              ui->theme.wifi_address);
-    present(ui, NULL);
+    ui->presented_video = ui->list_video.frame != NULL;
+    ui->list_video.changed = false;
+    present(ui, NULL, 0);
     return true;
 }
 
-/* Recompose only the selected row, bottom-up, as a full frame layers it: fill,
- * background, row, cover. The header (y < 60) and footer (y >= 420) keep their
- * own clips, so nothing else is drawn in the list band on these screens. */
-static void draw_marquee_row(MainUIApp *ui)
+/* Recompose only the selected row of a scrolling title, the cover area of a
+ * playing video preview, or both, each bottom-up as a full frame layers it:
+ * fill, background, the rows in it, cover. The header (y < 60) and footer
+ * (y >= 420) keep their own clips, so nothing else is drawn in the list band
+ * on these screens. */
+static void draw_partial(MainUIApp *ui, bool row_area, bool cover_area)
 {
-    int row = ui->view.selected - ui->view.start;
-    SDL_Rect area = {0, (Sint16)(60 + row * ui->config.row_height), 640,
-                     (Uint16)ui->config.row_height};
-    SDL_SetClipRect(ui->screen, &area);
-    SDL_FillRect(ui->screen, &area, SDL_MapRGB(ui->screen->format, 24, 24, 24));
-    blit(ui->theme.background, ui->screen, 0, 0);
+    SDL_Rect areas[2];
+    int count = 0;
+    /* A video's next frame alone: its frames are opaque, all of one size,
+     * and nothing is drawn over them, so the new frame over the last one is
+     * the whole change, without the background and rows under it. */
+    SDL_Surface *frame = ui->list_video.frame;
+    int edge = mainui_preview_edge(&ui->theme);
+    bool alone = false;
+    if (cover_area && !row_area && frame && !frame->format->Amask &&
+        !(frame->flags & (SDL_SRCALPHA | SDL_SRCCOLORKEY))) {
+        SDL_Rect place = {(Sint16)(edge + (250 - frame->w) / 2),
+                          (Sint16)(60 + (360 - frame->h) / 2), (Uint16)frame->w, (Uint16)frame->h};
+        SDL_Rect target = place;
+        if (place.x >= 0 && place.y >= 0 && place.x + place.w <= ui->screen->w &&
+            place.y + place.h <= ui->screen->h) {
+            SDL_SetClipRect(ui->screen, NULL);
+            if (SDL_BlitSurface(frame, NULL, ui->screen, &target) == 0) {
+                areas[count++] = place;
+                cover_area = false;
+                alone = true;
+                /* No row was drawn: whether a title moves is as it was. */
+                ui->animate = ui->presented_animating;
+            }
+        }
+    }
+    if (row_area) {
+        int row = ui->view.selected - ui->view.start;
+        areas[count++] = (SDL_Rect){0, (Sint16)(60 + row * ui->config.row_height), 640,
+                                    (Uint16)ui->config.row_height};
+    }
+    if (cover_area) {
+        edge = edge < 0 ? 0 : edge > 640 ? 640 : edge;
+        areas[count++] = (SDL_Rect){(Sint16)edge, 60, (Uint16)(640 - edge), 360};
+    }
     Uint32 elapsed = list_elapsed(ui);
-    draw_list_row(ui, row, elapsed);
-    SDL_SetClipRect(ui->screen, &area);
-    mainui_preview_draw(&ui->preview, &ui->theme, ui->screen);
+    for (int a = alone ? count : 0; a < count; a++) {
+        SDL_Rect *area = &areas[a];
+        SDL_SetClipRect(ui->screen, area);
+        SDL_FillRect(ui->screen, area, SDL_MapRGB(ui->screen->format, 24, 24, 24));
+        blit(ui->theme.background, ui->screen, 0, 0);
+        for (int i = 0; i < ui->config.rows && ui->view.start + i < ui->view.total; i++) {
+            int y = 60 + i * ui->config.row_height;
+            if (y < area->y + area->h && y + ui->config.row_height > area->y) {
+                draw_list_row(ui, i, elapsed, area);
+            }
+        }
+        SDL_SetClipRect(ui->screen, area);
+        mainui_preview_draw_image(&ui->preview, &ui->theme, ui->screen, ui->list_video.frame);
+    }
     SDL_SetClipRect(ui->screen, NULL);
 #ifndef MAINUI_ONION
     /* Host check: a partial frame must equal a full frame, pixel for pixel. */
@@ -770,18 +930,30 @@ static void draw_marquee_row(MainUIApp *ui)
                 abort();
             }
             mainui_count_add("verified-partial", 1);
+            static bool reported, reported_alone;
+            if (cover_area && !reported) {
+                fprintf(stderr, "MAINUI_VERIFY_PARTIAL: a video preview frame matches\n");
+                reported = true;
+            }
+            if (alone && !reported_alone) {
+                fprintf(stderr, "MAINUI_VERIFY_PARTIAL: a video frame drawn alone matches\n");
+                reported_alone = true;
+            }
             free(partial);
         }
         ui->animate = animate;
     }
 #endif
-    present(ui, &area);
+    ui->list_video.changed = false;
+    present(ui, areas, count);
 }
 
 bool mainui_draw_frame(MainUIApp *ui)
 {
-    if (mainui_frame_marquee_only(ui, SDL_GetTicks())) {
-        draw_marquee_row(ui);
+    Uint32 now = SDL_GetTicks();
+    bool row = mainui_frame_marquee_only(ui, now), cover = cover_only(ui, now);
+    if (row || cover) {
+        draw_partial(ui, row, cover);
         return true;
     }
     return draw_full_frame(ui);

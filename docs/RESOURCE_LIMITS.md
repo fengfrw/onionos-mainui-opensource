@@ -15,6 +15,8 @@ One that plays keeps two frames fitted to the screen (2.4 MiB) and its decoder, 
 The FFmpeg libraries are loaded when a video is shown and closed when it is left. Closing a video stops FFmpeg's opening, probing and reading through its interrupt callback, at their next check; what is under way is waited for: a library being loaded, a decode call, or a read blocked on the card until it returns.
 Its sound is decoded up to 1 second ahead, 16-bit stereo at the mixer's rate, in a 3-second buffer (562 KiB at 48 kHz); the oldest is dropped beyond that. Sound of an unusual rate (outside 1 to 384 kHz) or with more than 8 channels is not played.
 To read that far, up to 512 compressed pictures, at most 4 MiB, are read ahead of decoding. When that is full, the pictures already read are decoded first, in order, before a new one.
+A list's video preview (`.romListVideoPreview`) plays one video at a time, without sound, fitted to the cover's area: two frames of at most 250 by 360 pixels (0.7 MiB) and its decoder, on a thread that runs only while that game stays selected; the libraries are loaded when it starts and closed when it stops.
+In `fullscreen` mode its two frames are fitted to the screen, at most 640 by 480 pixels (2.3 MiB), as the gallery's.
 Theme fonts are limited to 64 MiB per encoded file before SDL_ttf opens them; larger fonts are logged and fall back to the default font. FreeType reads fonts on demand, so this only rejects implausible files, and large CJK fonts fit.
 
 The arcade-name map is limited to 8 MiB and 131,072 lines, bounding both its text buffer and hash table. Larger maps use the original filename fallback. The existing large-map compatibility fixture remains within these limits.

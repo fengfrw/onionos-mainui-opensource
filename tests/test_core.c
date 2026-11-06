@@ -49,6 +49,44 @@ int mainui_suite_core(void)
     }
     mainui_config_parse(&c, NULL, NULL, NULL, "bounce");
     CHECK(!c.scroll_bounce && c.scroll_status == 1);
+    /* .romListVideoPreview: no file, no previews; a delay in ms, clamped to
+     * 0..30000, or 1000 without one; then cover (the default) or
+     * fullscreen. */
+    CHECK(c.video_preview_delay == -1 && !c.video_preview_fullscreen);
+
+    const struct {
+        const char *text;
+        int delay;
+        bool fullscreen;
+    } previews[] = {{NULL, -1, false},
+                    {"", 1000, false},
+                    {"\n", 1000, false},
+                    {"1500", 1500, false},
+                    {" 250\r\n", 250, false},
+                    {"0", 0, false},
+                    {"-5", 0, false},
+                    {"99999999999", 30000, false},
+                    {"on", 1000, false},
+                    {"800ms", 1000, false},
+                    {"800,cover", 800, false},
+                    {"800,fullscreen", 800, true},
+                    {"0,fullscreen", 100, true},
+                    {"99 fullscreen", 100, true},
+                    {"100,fullscreen", 100, true},
+                    {"-5,fullscreen", 100, true},
+                    {"0,cover", 0, false},
+                    {"800 FullScreen\n", 800, true},
+                    {"800, ,fullscreen,later", 800, true},
+                    {"fullscreen", 1000, true},
+                    {"800,full", 800, false},
+                    {"800,fullscreens", 800, false},
+                    {"800fullscreen", 1000, false}};
+
+    for (size_t i = 0; i < sizeof previews / sizeof *previews; ++i) {
+        bool fullscreen = !previews[i].fullscreen;
+        CHECK(mainui_config_video_preview(previews[i].text, &fullscreen) == previews[i].delay &&
+              fullscreen == previews[i].fullscreen);
+    }
     CHECK(mainui_device(285).lid && !mainui_device(354).lid && !mainui_device(999).axp);
     MainUIViewport v;
     mainui_viewport_restore(&v, 0, 10, 30, 20, 29);

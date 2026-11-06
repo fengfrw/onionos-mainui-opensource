@@ -8,6 +8,7 @@
 #include "catalog/favorite_edit.h"
 #include "core/letter_jump.h"
 #include "menus/game_menu.h"
+#include "ui/list_video.h"
 #include "ui/menu_view.h"
 #include "ui/name_input.h"
 
@@ -33,7 +34,9 @@ typedef struct {
     MainUIAboutJob about_job;
     MainUILanguages languages;
     MainUIPreview preview;
-    bool preview_sync_once; /* Include selected artwork in the first list frame. */
+    bool preview_sync_once;     /* Include selected artwork in the first list frame. */
+    MainUIListVideo list_video; /* the selected game's video in place of its cover */
+    bool presented_video;       /* the last full frame showed a video frame */
 
     const char *dir;
     const char *base;
@@ -152,6 +155,7 @@ typedef struct {
     SDL_TimerID timer;
     /* Idle repaint skipping: what the last presented frame showed, and when. */
     bool idle_tick;
+    bool video_wake; /* woken by a list or gallery video's frame */
     /* Marquee pacing: next frame deadline, and frames shown since scrolling began
      * for the selection made at marquee_origin. */
     bool marquee_paced;

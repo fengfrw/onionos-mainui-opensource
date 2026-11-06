@@ -1517,6 +1517,7 @@ bool mainui_dispatch_event(MainUIApp *ui, SDL_Event *event)
         /* Their releases would be taken for presses. */
         ui->x_armed = ui->y_armed = ui->select_armed = ui->start_armed = false;
         ui->select_brightness = false;
+        ui->list_video.swallow = false;
         ui->letter_jump.active = false;
         ui->confirmation = -1;
         ui->return_latched = false;
@@ -1543,6 +1544,27 @@ bool mainui_dispatch_event(MainUIApp *ui, SDL_Event *event)
         if (released == SDLK_RETURN) {
             ui->return_latched = false;
         }
+        if (released == SDLK_ESCAPE) {
+            ui->list_video.swallow = false;
+        }
+    }
+    /* A list's fullscreen video preview: B closes it and does nothing else,
+     * nor do its repeats; any other key closes it as it goes down, and acts
+     * as on the list, also the X and Y shortcuts, Select and Start, which
+     * act when released. Either way it stays closed until another game is
+     * selected. */
+    if (event->type == SDL_KEYDOWN && mainui_list_video_fullscreen(&ui->list_video) &&
+        !(ui->device_enabled && ui->device_status.sleeping == 1)) {
+        mainui_list_video_dismiss(&ui->list_video);
+        if (mainui_input_key(event->key.keysym.sym) == SDLK_ESCAPE) {
+            ui->held[SDLK_ESCAPE] = true;
+            ui->list_video.swallow = true;
+            return true;
+        }
+    }
+    if (event->type == SDL_KEYDOWN && ui->list_video.swallow &&
+        mainui_input_key(event->key.keysym.sym) == SDLK_ESCAPE) {
+        return true;
     }
     /* Key repeat from an A press that opened a confirmation or dismissed a
      * message: ignored until A is released. */

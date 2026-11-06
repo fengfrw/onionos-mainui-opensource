@@ -77,6 +77,59 @@ static bool scroll_style_bounce(const char *text, size_t length)
     return pos == length || whitespace(text[pos]) || text[pos] == ',';
 }
 
+/* The next word of text from *pos, after commas and whitespace: its start
+ * and length (0 at the end). */
+static size_t next_word(const char *text, size_t length, size_t *pos)
+{
+    while (*pos < length && (text[*pos] == ',' || whitespace(text[*pos]))) {
+        ++*pos;
+    }
+    size_t end = *pos;
+    while (end < length && text[end] != ',' && !whitespace(text[end])) {
+        end++;
+    }
+    return end - *pos;
+}
+
+static bool word_is(const char *text, size_t length, const char *word)
+{
+    if (strlen(word) != length) {
+        return false;
+    }
+    for (size_t i = 0; i < length; i++) {
+        char ch = text[i];
+        if ((ch >= 'A' && ch <= 'Z' ? ch - 'A' + 'a' : ch) != word[i]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+int mainui_config_video_preview(const char *text, bool *fullscreen)
+{
+    *fullscreen = false;
+    if (!text) {
+        return -1;
+    }
+    size_t length = bounded_length(text, 31), pos = 0, used;
+    size_t size = next_word(text, length, &pos);
+    bool valid;
+    int delay = size ? integer(text + pos, size, &used, &valid) : 0;
+    /* A delay, then a mode; or the mode alone, after 1000 ms. */
+    if (size && valid && used == size) {
+        delay = clamp(delay, 0, 30000);
+        pos += size;
+        size = next_word(text, length, &pos);
+    }
+    else {
+        delay = 1000;
+    }
+    *fullscreen = word_is(text + pos, size, "fullscreen");
+    /* Fullscreen takes the whole screen: at least 100 ms, so moving
+     * through the list never flashes one up. */
+    return *fullscreen && delay < 100 ? 100 : delay;
+}
+
 void mainui_config_parse(MainUIConfig *out, const char *rows, const char *font, const char *repeat,
                          const char *scroll)
 {
@@ -85,7 +138,8 @@ void mainui_config_parse(MainUIConfig *out, const char *rows, const char *font, 
                           .repeat_delay = 500,
                           .repeat_interval = 100,
                           .scroll_status = 1,
-                          .context_ellipsis = true};
+                          .context_ellipsis = true,
+                          .video_preview_delay = -1};
     if (rows) {
         out->rows = clamp(integer(rows, bounded_length(rows, 12), NULL, NULL), 6, 20);
     }
@@ -168,7 +222,7 @@ static bool config_read(const char *dir, const char *name, char *out, size_t siz
 
 void mainui_config_load(MainUIConfig *out, const char *directory)
 {
-    char rows[13], font[13], repeat[32], scroll[4097], flag[2];
+    char rows[13], font[13], repeat[32], scroll[4097], flag[2], video[32];
     bool r = config_read(directory, ".romListRows", rows, sizeof rows);
     bool f = config_read(directory, ".romListFontSize", font, sizeof font);
     bool k = config_read(directory, ".mainUIKeyRepeat", repeat, sizeof repeat);
@@ -182,4 +236,7 @@ void mainui_config_load(MainUIConfig *out, const char *directory)
     out->show_expert = config_read(directory, ".showExpert", flag, sizeof flag);
     out->context_ellipsis = !config_read(directory, ".noContextMenuEllipsis", flag, sizeof flag);
     out->footer_alt = config_read(directory, ".mainuiFooterAltLayout", flag, sizeof flag);
+    out->video_preview_delay = mainui_config_video_preview(
+        config_read(directory, ".romListVideoPreview", video, sizeof video) ? video : NULL,
+        &out->video_preview_fullscreen);
 }

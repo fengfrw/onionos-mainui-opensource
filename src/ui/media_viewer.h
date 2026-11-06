@@ -56,6 +56,8 @@ typedef struct {
  * missing screenshot number from -2 on ends the numbered ones. Returns the
  * count. */
 int mainui_media_find(const char *rom_root, const char *rom, MainUIMediaItem *items, int max);
+/* The game's video, media/videos/<name>.mp4, when it exists, by stat(). */
+bool mainui_media_video(const char *rom_root, const char *rom, char path[4096]);
 /* Open on the first item. False, with nothing open, when the game has none.
  * sd is the SD card's root, for Onion's FFmpeg in .tmp_update/lib/parasyte. */
 bool mainui_media_open(MainUIMediaViewer *viewer, const char *rom_root, const char *rom,

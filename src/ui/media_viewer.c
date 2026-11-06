@@ -31,21 +31,39 @@ static bool add(MainUIMediaItem *items, int max, int *count, int kind, const cha
     return true;
 }
 
-int mainui_media_find(const char *rom_root, const char *rom, MainUIMediaItem *items, int max)
+/* The ROM file's name without its extension, not the game's title. */
+static bool media_name(const char *rom_root, const char *rom, char name[1024])
 {
-    if (!rom_root || !*rom_root || !rom || !items || max <= 0) {
-        return 0;
+    if (!rom_root || !*rom_root || !rom) {
+        return false;
     }
-    /* The ROM file's name without its extension, not the game's title. */
     const char *file = strrchr(rom, '/');
     file = file ? file + 1 : rom;
-    char name[1024];
-    snprintf(name, sizeof name, "%s", file);
+    snprintf(name, 1024, "%s", file);
     char *dot = strrchr(name, '.');
     if (dot && dot != name) {
         *dot = 0;
     }
-    if (!*name || strlen(file) >= sizeof name) {
+    return *name && strlen(file) < 1024;
+}
+
+bool mainui_media_video(const char *rom_root, const char *rom, char path[4096])
+{
+    char name[1024];
+    MainUIMediaItem item;
+    int count = 0;
+    if (!media_name(rom_root, rom, name) ||
+        !add(&item, 1, &count, MAINUI_MEDIA_VIDEO, rom_root, "videos", name, ".mp4")) {
+        return false;
+    }
+    memcpy(path, item.path, sizeof item.path);
+    return true;
+}
+
+int mainui_media_find(const char *rom_root, const char *rom, MainUIMediaItem *items, int max)
+{
+    char name[1024];
+    if (!items || max <= 0 || !media_name(rom_root, rom, name)) {
         return 0;
     }
     int count = 0;

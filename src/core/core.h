@@ -33,12 +33,24 @@ typedef struct {
     /* Footer with the page counter on the left and the button hints on the
      * right, B before A: .mainuiFooterAltLayout exists. */
     bool footer_alt;
+    /* Milliseconds a game stays selected before its video plays in place of
+     * its cover, or over the whole screen, or -1 for never:
+     * .romListVideoPreview (see mainui_config_video_preview()). */
+    int video_preview_delay;
+    bool video_preview_fullscreen;
 } MainUIConfig;
 
 /* Parse nullable file contents using the patcher's prefix/read-length rules.
  * out must be non-NULL. Every call resets all fields to baseline defaults;
  * mainui_config_load subsequently fills the marker-file flags.
  */
+/* The contents of .romListVideoPreview, NULL when it is missing: the delay
+ * and the mode, separated by commas or spaces, as "800,fullscreen". The
+ * delay is -1 (no previews) without the file, otherwise a whole number of
+ * milliseconds from 0 to 30000 (clamped), or 1000 when the file holds none.
+ * The mode is "cover", the default, or "fullscreen" in any case; any other
+ * word is cover. Fullscreen waits at least 100 ms. */
+int mainui_config_video_preview(const char *text, bool *fullscreen);
 void mainui_config_parse(MainUIConfig *out, const char *rows, const char *font, const char *repeat,
                          const char *scroll);
 /* Files are read from an explicit config directory; never writes user data. */

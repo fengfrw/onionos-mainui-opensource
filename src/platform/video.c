@@ -150,7 +150,7 @@ struct MainUIVideo {
 
 static void wake_ui(void)
 {
-    SDL_Event event = {.type = SDL_USEREVENT};
+    SDL_Event event = {.type = SDL_USEREVENT, .user.code = MAINUI_VIDEO_CODE};
     SDL_PushEvent(&event);
 }
 

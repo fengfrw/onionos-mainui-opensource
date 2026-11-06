@@ -26,6 +26,11 @@ typedef struct {
 bool mainui_details_open(MainUIDetails *details, MainUICatalog *catalog,
                          const MainUILibrary *library, const MainUILibrary *favorites, int row,
                          MainUIPreview *preview);
+/* The ROM file of a list row's game, on this host, and its console's ROM
+ * folder, found as Game Info finds them (the media folder is there). False
+ * for folders and rows that are not games. */
+bool mainui_details_locate(MainUICatalog *catalog, const MainUILibrary *library, int row,
+                           char host_rom[MAINUI_PATH_MAX], char rom_root[MAINUI_PATH_MAX]);
 /* Up/Down wraps over games only and synchronizes the source list viewport.
  * B/Left closes. L2/R2 moves one description page. */
 void mainui_details_key(MainUIDetails *details, MainUICatalog *catalog,

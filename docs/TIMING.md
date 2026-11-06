@@ -95,6 +95,14 @@ have settled for a second, and battery and Wi-Fi must be unchanged. A full repai
 still happens at least every five seconds, or every 30 seconds while a title
 scrolls, when those ticks recompose and present only the selected row. The
 periodic Wi-Fi status refresh does not force full frames; its result repaints
-the screen only if the header changes. On the host,
-`MAINUI_VERIFY_PARTIAL=1` checks every such row frame against a full frame and
-aborts on the first differing pixel.
+the screen only if the header changes. A list's video preview likewise
+presents only the cover's area for each new video frame, woken when the frame
+is due: the new frame is drawn alone over the last one (frames are opaque and
+all of one size), and only while a title scrolls beside it is the area
+recomposed with the background and rows. Its first frame, and the cover
+coming back, repaint the whole frame, as titles then stop at a different
+edge. In fullscreen mode
+every video frame repaints the whole frame, as in Game Info's gallery, and
+titles do not scroll under it. On the host,
+`MAINUI_VERIFY_PARTIAL=1` checks every such row, cover or video frame against
+a full frame and aborts on the first differing pixel.

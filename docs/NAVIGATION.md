@@ -67,6 +67,17 @@ A third value, `700,120,bounce`, makes it bounce instead: after the delay it tra
 Each way speeds up smoothly from rest and slows into the end, over about a quarter of a second, and runs at the set speed in between. The rest lasts as long as scrolling 84 px takes at that speed, at least 400 ms and at most 2 s: 720 ms at 120 px/s.
 With a cover shown, its end stops at the cover's edge. A title starting with Hebrew or Arabic starts at its right end and moves the other way. `rolling`, nothing or any other third value rolls, as before.
 
+### Video previews
+
+With a file named `.romListVideoPreview` in `.tmp_update/config`, a game that stays selected in a ROM list, Favorites, Recents or Search results plays its video in place of its cover: the gallery's `media/videos/<name>.mp4` ([below](#game-infos-media-gallery)), silently and repeating, fitted to the cover's 250x360 area.
+The file holds the delay in milliseconds and the mode, separated by a comma or spaces: `1500`, `800,cover` or `800,fullscreen`. Without a delay it is 1000 ms, so an empty file is `1000,cover`; delays are kept within 0 to 30000, and to at least 100 for `fullscreen`. Without the file nothing plays, as before.
+Scrolling past games plays nothing: a video starts only once its game has been selected for the whole delay, and it stops, showing the cover again, as soon as the selection moves or anything opens over the list (Game Info, a menu, a message or Search). It stops while the device sleeps and starts again on waking.
+A game without a video, or a video that cannot be played, keeps its cover, without a message. A game with a video but no cover shows the video where the cover would be, and titles stop at its edge as at a cover's.
+
+`fullscreen` (in any case; any other mode is `cover`) plays the video over the whole screen instead, header and footer too, fitted to it on black, also silently and repeating. The list stays until the video's first frame is ready, and comes back if the video cannot play.
+B closes the video and stays in the list; held down, it does nothing more until released. Any other button closes it and does what it does in the list: Up and Down select another game, whose video plays after the delay, A launches the game, Right opens Game Info and Select or Menu the context menu.
+A video closed this way does not play again until another game has been selected, also after sleep.
+
 ## Game-list context menus
 
 `.tmp_update/config/game-menu.json` can reorder and hide the rows of the context menus in ROM lists, Favorites, Recents and Search results. It cannot add actions. This file, with every ID each section knows, gives the default menus:

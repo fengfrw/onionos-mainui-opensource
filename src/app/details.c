@@ -62,15 +62,15 @@ static void collapse_space(char *text)
     *write = 0;
 }
 
-bool mainui_details_open(MainUIDetails *details, MainUICatalog *catalog,
-                         const MainUILibrary *library, const MainUILibrary *favorites, int row,
-                         MainUIPreview *preview)
+/* A row's game: its title, ROM path as listed, launcher, and catalog index.
+ * False for folders and rows that are not games. */
+static bool game_at(MainUICatalog *catalog, const MainUILibrary *library, int row,
+                    const char **label, const char **rom, const char **launch, int *index)
 {
-    if (!preview || !catalog || row < 0 || folder(catalog, library, row)) {
+    if (!catalog || row < 0 || folder(catalog, library, row)) {
         return false;
     }
-    const char *label = NULL, *rom = NULL, *launch = NULL;
-    int index = library ? row : mainui_browser_index(catalog, row);
+    *index = library ? row : mainui_browser_index(catalog, row);
     if (library) {
         if (row >= library->visible_count) {
             return false;
@@ -79,27 +79,58 @@ bool mainui_details_open(MainUIDetails *details, MainUICatalog *catalog,
         if (item->type == 3) {
             return false;
         }
-        label = item->label;
-        rom = item->rom;
-        launch = item->launch;
+        *label = item->label;
+        *rom = item->rom;
+        *launch = item->launch;
+        return *label && *rom;
     }
-    else {
-        if (!catalog->depth) {
-            return false;
-        }
-        MainUIEntry *entry = mainui_catalog_entry(catalog, index);
-        if (!entry) {
-            return false;
-        }
-        label = entry->label;
-        rom = entry->path;
-        /* A Search result names its source console; other rows are the
-         * open console's. */
-        int system = catalog->pages[0].view.selected;
-        launch = entry->launch ? entry->launch
-                 : system >= 0 && system < catalog->pages[0].count
-                     ? catalog->pages[0].entries[system].launch
-                     : NULL;
+    if (!catalog->depth) {
+        return false;
+    }
+    MainUIEntry *entry = mainui_catalog_entry(catalog, *index);
+    if (!entry) {
+        return false;
+    }
+    *label = entry->label;
+    *rom = entry->path;
+    /* A Search result names its source console; other rows are the
+     * open console's. */
+    int system = catalog->pages[0].view.selected;
+    *launch = entry->launch ? entry->launch
+              : system >= 0 && system < catalog->pages[0].count
+                  ? catalog->pages[0].entries[system].launch
+                  : NULL;
+    return *label && *rom;
+}
+
+bool mainui_details_locate(MainUICatalog *catalog, const MainUILibrary *library, int row,
+                           char host_rom[MAINUI_PATH_MAX], char rom_root[MAINUI_PATH_MAX])
+{
+    const char *label = NULL, *rom = NULL, *launch = NULL;
+    int index;
+    if (!game_at(catalog, library, row, &label, &rom, &launch, &index) ||
+        !mainui_catalog_path(host_rom, catalog->sd, catalog->sd, rom)) {
+        return false;
+    }
+    /* The console by its launcher, as Game Info finds it. */
+    const char *root = library ? NULL : catalog->pages[1].path;
+    MainUISource *source = malloc(sizeof *source); /* 8 KiB: kept off the stack */
+    if (source && mainui_catalog_source(catalog, rom, launch, source)) {
+        root = source->rom_root;
+    }
+    snprintf(rom_root, MAINUI_PATH_MAX, "%s", root ? root : "");
+    free(source);
+    return true;
+}
+
+bool mainui_details_open(MainUIDetails *details, MainUICatalog *catalog,
+                         const MainUILibrary *library, const MainUILibrary *favorites, int row,
+                         MainUIPreview *preview)
+{
+    const char *label = NULL, *rom = NULL, *launch = NULL;
+    int index;
+    if (!preview || !game_at(catalog, library, row, &label, &rom, &launch, &index)) {
+        return false;
     }
     char host[MAINUI_PATH_MAX];
     if (!mainui_catalog_path(host, catalog->sd, catalog->sd, rom) ||
