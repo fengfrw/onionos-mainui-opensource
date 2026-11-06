@@ -67,6 +67,25 @@ A third value, `700,120,bounce`, makes it bounce instead: after the delay it tra
 Each way speeds up smoothly from rest and slows into the end, over about a quarter of a second, and runs at the set speed in between. The rest lasts as long as scrolling 84 px takes at that speed, at least 400 ms and at most 2 s: 720 ms at 120 px/s.
 With a cover shown, its end stops at the cover's edge. A title starting with Hebrew or Arabic starts at its right end and moves the other way. `rolling`, nothing or any other third value rolls, as before.
 
+## Game-list context menus
+
+`.tmp_update/config/game-menu.json` can reorder and hide the rows of the context menus in ROM lists, Favorites, Recents and Search results. It cannot add actions. This file, with every ID each section knows, gives the default menus:
+
+```json
+{
+  "roms": ["launch", "favorite", "delete", "search", "refresh"],
+  "favorites": ["move", "create_folder", "sort", "remove_favorite", "rename_folder", "delete_folder"],
+  "recents": ["launch", "remove_recent", "clear_recents"],
+  "search_results": ["launch", "favorite"]
+}
+```
+
+A menu shows the rows listed for its section, in that order, that the selection offers, as without the file: a folder in a ROM list offers only Search and Refresh roms, the Search console offers no Refresh roms, and a Favorites folder offers no Sort or Remove Favorite.
+`favorite` is Add to favorites or Remove Favorite, and `move` is Move here while a Favorite is being moved. A row left out is hidden; an empty list means that section has no menu, and Select or Menu does nothing there.
+
+A missing section keeps its default menu. Unknown and repeated IDs are skipped. A missing file gives the default menus, and so does a file that is not a JSON object, which the log notes once (`[menu] ... game-menu.json is not a JSON object`).
+The file is read when MainUI starts and never written. Confirmations still ask as before. The main menu's context menu (`main-menu.json`), Apps and the console grids are not affected.
+
 ## When a list changes
 
 Edits change the list under the window: Create, Rename, Sort, Delete, Move and Paste in Favorites, removing a Favorite or Recent, and deleting a ROM. After an edit:

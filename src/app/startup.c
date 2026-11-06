@@ -181,9 +181,11 @@ int mainui_setup_session(MainUIApp *ui, int argc, char **argv)
     }
     if (ui->config_dir) {
         mainui_config_load(&ui->config, ui->config_dir);
+        mainui_game_menu_load(&ui->game_menu, ui->config_dir);
     }
     else {
         mainui_config_parse(&ui->config, NULL, NULL, NULL, NULL);
+        mainui_game_menu_defaults(&ui->game_menu);
     }
     ui->list = calloc(1, sizeof *ui->list);
     ui->catalog = ui->sd ? calloc(1, sizeof *ui->catalog) : NULL;

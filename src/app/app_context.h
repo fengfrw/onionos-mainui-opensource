@@ -7,6 +7,7 @@
 #include "app/settings_page.h"
 #include "catalog/favorite_edit.h"
 #include "core/letter_jump.h"
+#include "menus/game_menu.h"
 #include "ui/menu_view.h"
 #include "ui/name_input.h"
 
@@ -92,6 +93,7 @@ typedef struct {
     bool language_open;
     MainUIContext context;
     MainUIContext home_context;
+    MainUIGameMenu game_menu; /* game-menu.json, read once at startup */
     cJSON *context_record;
     bool context_open;
     int confirmation;

@@ -766,13 +766,16 @@ static bool screen_context_open_key(MainUIApp *ui, SDLKey key)
         }
         if (ui->search.results) {
             mainui_context_rows(&ui->context, game_actions, ui->context_record ? 2 : 0);
+            mainui_game_menu_apply(&ui->context, &ui->game_menu, MAINUI_GAME_MENU_SEARCH_RESULTS);
         }
         else if (ui->library->recent) {
             mainui_context_rows(&ui->context, recent_actions, ui->context_record ? 3 : 0);
+            mainui_game_menu_apply(&ui->context, &ui->game_menu, MAINUI_GAME_MENU_RECENTS);
         }
         else {
             mainui_favorite_context(&ui->context, ui->library, ui->view.selected,
                                     ui->favorite_editor.key != NULL);
+            mainui_game_menu_apply(&ui->context, &ui->game_menu, MAINUI_GAME_MENU_FAVORITES);
         }
     }
     else if (ui->home) {
@@ -792,6 +795,7 @@ static bool screen_context_open_key(MainUIApp *ui, SDLKey key)
         else {
             mainui_context_rows(&ui->context, system_actions, refreshable ? 2 : 1);
         }
+        mainui_game_menu_apply(&ui->context, &ui->game_menu, MAINUI_GAME_MENU_ROMS);
     }
     /* The patched ROM popup uses exact persistent ROM membership,
      * including games assigned to a Favorite folder, read as it is now. */
