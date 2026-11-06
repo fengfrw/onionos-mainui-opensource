@@ -146,6 +146,11 @@ static void keyboard_priority(MainUIApp *ui)
     assert(key_event(ui, SDL_KEYDOWN, SDLK_F2, 0));
     assert(ui->name_input.open && ui->settings_keyboard == 2 && *ui->name_input.error);
     assert(!*ui->settings_page.password && !ui->device_job.thread);
+    /* Nor an empty one, for a network the scan found protected. */
+    ui->name_input.text[0] = ui->name_input.error[0] = 0;
+    assert(key_event(ui, SDL_KEYDOWN, SDLK_F2, 0));
+    assert(ui->name_input.open && ui->settings_keyboard == 2 && *ui->name_input.error);
+    assert(!*ui->settings_page.password && !ui->device_job.thread);
     assert(tap(ui, SDLK_ESCAPE));
     assert(!ui->name_input.open && !ui->settings_keyboard);
     assert(!ui->settings_page.connect_after_password && ui->settings_page.open);

@@ -284,8 +284,12 @@ bool mainui_screen_name_input_key(MainUIApp *ui, const SDL_keysym *key)
         }
         else if (result == NAME_SUBMIT) {
             size_t length = strlen(ui->name_input.text);
-            bool valid = ui->settings_keyboard == 1 ? length > 0 && length <= 32
-                                                    : length == 0 || (length >= 8 && length <= 63);
+            /* An empty password is an open network's, never one the scan
+             * found protected: saved without one, it could not join. */
+            bool open = !ui->settings_page.connect_after_password;
+            bool valid = ui->settings_keyboard == 1
+                             ? length > 0 && length <= 32
+                             : (open && length == 0) || (length >= 8 && length <= 63);
             if (valid) {
                 if (ui->settings_keyboard == 1) {
                     strcpy(ui->settings_page.ssid, ui->name_input.text);
@@ -319,9 +323,9 @@ bool mainui_screen_name_input_key(MainUIApp *ui, const SDL_keysym *key)
             }
             else {
                 snprintf(ui->name_input.error, sizeof ui->name_input.error, "%s",
-                         ui->settings_keyboard == 1
-                             ? "SSID must contain 1-32 UTF-8 bytes."
-                             : "Use 8-63 bytes, or empty for an open network.");
+                         ui->settings_keyboard == 1 ? "SSID must contain 1-32 UTF-8 bytes."
+                         : open ? "Use 8-63 bytes, or empty for an open network."
+                                : "This network needs its password: 8-63 bytes.");
             }
         }
         return true;
