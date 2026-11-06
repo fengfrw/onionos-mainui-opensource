@@ -344,7 +344,19 @@ bool mainui_session_restore_control(MainUISession *out, const char *sd, bool sen
             }
             const char *folder_key = string(cJSON_GetArrayItem(pages, level), "folder_key");
             int found = -1;
-            for (int row = 0; row < mainui_browser_count(pending.catalog); row++) {
+            /* Normal return: the previously selected folder has not moved. */
+            int candidate = saved[level - 1].selected;
+            if (candidate >= 0 && candidate < mainui_browser_count(pending.catalog)) {
+                MainUIEntry *entry = mainui_catalog_entry(
+                    pending.catalog, mainui_browser_index(pending.catalog, candidate));
+                const char *value = entry ? (level == 1 ? entry->launch : entry->path) : NULL;
+                if (value && !strcmp(value, resolved) &&
+                    (!*folder_key || (entry->directory && entry->cache_key &&
+                                      !strcmp(entry->cache_key, folder_key)))) {
+                    found = candidate;
+                }
+            }
+            for (int row = 0; found < 0 && row < mainui_browser_count(pending.catalog); row++) {
                 MainUIEntry *entry = mainui_catalog_entry(
                     pending.catalog, mainui_browser_index(pending.catalog, row));
                 const char *value = entry ? (level == 1 ? entry->launch : entry->path) : NULL;
@@ -395,7 +407,18 @@ bool mainui_session_restore_control(MainUISession *out, const char *sd, bool sen
             const char *selected_key = string(resume, "selected_key");
             if (*identity && mainui_catalog_path(resolved, sd, sd, identity)) {
                 int found = -1;
-                for (int row = 0; row < mainui_browser_count(pending.catalog); row++) {
+                int candidate = selected_view.selected;
+                if (candidate >= 0 && candidate < mainui_browser_count(pending.catalog)) {
+                    MainUIEntry *entry = mainui_catalog_entry(
+                        pending.catalog, mainui_browser_index(pending.catalog, candidate));
+                    const char *value = entry ? (by_launch ? entry->launch : entry->path) : NULL;
+                    if (value && !strcmp(value, resolved) &&
+                        (!*selected_key || (entry->directory && entry->cache_key &&
+                                            !strcmp(entry->cache_key, selected_key)))) {
+                        found = candidate;
+                    }
+                }
+                for (int row = 0; found < 0 && row < mainui_browser_count(pending.catalog); row++) {
                     MainUIEntry *entry = mainui_catalog_entry(
                         pending.catalog, mainui_browser_index(pending.catalog, row));
                     if (entry && (by_launch ? entry->launch : entry->path) &&

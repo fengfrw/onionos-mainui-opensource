@@ -894,22 +894,24 @@ static void black_box(SDL_Surface *screen, SDL_Rect rect, Uint8 alpha)
 
 /* Light text on a black box, at x from the left or, negative, the right,
  * the box as opaque as alpha. */
-static void badge_over(SDL_Surface *screen, TTF_Font *font, const char *text, int x, Uint8 alpha)
+static void badge_over(SDL_Surface *screen, MainUITheme *theme, TTF_Font *font, const char *text,
+                       int x, Uint8 alpha)
 {
-    int width = 0, height = font ? TTF_FontHeight(font) : 0;
-    if (!font || TTF_SizeUTF8(font, text, &width, NULL) < 0) {
+    SDL_Color white = {255, 255, 255, 0};
+    SDL_Surface *label = mainui_theme_text(theme, font, text, white);
+    if (!label) {
         return;
     }
-    SDL_Color white = {255, 255, 255, 0};
+    int width = label->w, height = font ? TTF_FontHeight(font) : label->h;
     SDL_Rect back = {(Sint16)(x >= 0 ? x : screen->w + x - width - 12),
                      (Sint16)(screen->h - height - 14), (Uint16)(width + 12), (Uint16)(height + 6)};
     black_box(screen, back, alpha);
-    mainui_label(screen, font, white, text, back.x + 6, back.y + 3);
+    mainui_blit(screen, label, back.x + 6, back.y + 3);
 }
 
-static void badge(SDL_Surface *screen, TTF_Font *font, const char *text, int x)
+static void badge(SDL_Surface *screen, MainUITheme *theme, TTF_Font *font, const char *text, int x)
 {
-    badge_over(screen, font, text, x, SDL_ALPHA_OPAQUE);
+    badge_over(screen, theme, font, text, x, SDL_ALPHA_OPAQUE);
 }
 
 /* The pause sign, two white bars on a black box as tall as a badge, at the
@@ -1003,8 +1005,8 @@ static void draw_save(MainUIMediaViewer *viewer, MainUITheme *theme, SDL_Surface
         return;
     }
     /* The save's labels let its full-screen picture show through. */
-    badge_over(screen, theme->hint_font, name, 8, LABEL_ALPHA);
-    badge_over(screen, theme->hint_font, counter, -8, LABEL_ALPHA);
+    badge_over(screen, theme, theme->hint_font, name, 8, LABEL_ALPHA);
+    badge_over(screen, theme, theme->hint_font, counter, -8, LABEL_ALPHA);
 }
 
 static void draw_menu(MainUIMediaViewer *viewer, MainUITheme *theme, SDL_Surface *screen)
@@ -1263,7 +1265,7 @@ static void draw_text(MainUIMediaViewer *viewer, MainUITheme *theme, SDL_Surface
     }
     char position[32];
     snprintf(position, sizeof position, "%d", reader->top + (reader->count > 0));
-    badge(screen, theme->hint_font, viewer->search_missing ? "Not found" : position, 8);
+    badge(screen, theme, theme->hint_font, viewer->search_missing ? "Not found" : position, 8);
 }
 
 static void draw_map(MainUIMediaViewer *viewer, MainUITheme *theme, SDL_Surface *screen)
@@ -1305,7 +1307,7 @@ static void draw_map(MainUIMediaViewer *viewer, MainUITheme *theme, SDL_Surface 
     /* No title: only which map it is, fixed while the image pans. */
     char counter[32];
     snprintf(counter, sizeof counter, "%d/%d", viewer->map_index + 1, viewer->map_count);
-    badge_over(screen, theme->hint_font, counter, -8, LABEL_ALPHA);
+    badge_over(screen, theme, theme->hint_font, counter, -8, LABEL_ALPHA);
 }
 
 void mainui_media_draw(MainUIMediaViewer *viewer, MainUITheme *theme, SDL_Surface *screen,
@@ -1359,7 +1361,7 @@ void mainui_media_draw(MainUIMediaViewer *viewer, MainUITheme *theme, SDL_Surfac
     if (viewer->count > 1) {
         char counter[32];
         snprintf(counter, sizeof counter, "%d/%d", viewer->index + 1, viewer->count);
-        badge_over(screen, theme->hint_font, counter, -8, LABEL_ALPHA);
+        badge_over(screen, theme, theme->hint_font, counter, -8, LABEL_ALPHA);
     }
     bool paused = viewer->video && !*error && mainui_video_paused(viewer->video);
     if (paused) {

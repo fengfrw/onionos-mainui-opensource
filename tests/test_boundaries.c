@@ -286,6 +286,9 @@ int main(int argc, char **argv)
     assert(!strcmp(metadata.genre, "Root fallback"));
     mainui_gamelist_metadata_close();
     MainUILibraryItem item = {.rom = "/mnt/SDCARD/Roms/Normal/alpha.nes"};
+    char normalized_rom[MAINUI_PATH_MAX];
+    assert(mainui_rom_key(normalized_rom, item.rom));
+    item.rom_key = normalized_rom;
     MainUILibrary library = {.items = &item, .count = 1};
     assert(mainui_library_contains(&library, item.rom));
     assert(!mainui_library_contains(&library, "alpha"));
